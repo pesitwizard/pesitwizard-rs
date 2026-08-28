@@ -9,6 +9,8 @@
 #![allow(clippy::multiple_crate_versions)]
 
 mod api;
+mod audit;
+mod backup;
 mod config;
 mod handler;
 mod manager;
@@ -22,6 +24,7 @@ use std::time::Duration;
 use anyhow::Context;
 use axum::http::HeaderValue;
 use clap::{Args, Parser, Subcommand};
+use pesit_app::audit::AuditLog;
 use pesit_app::store::JsonStore;
 use pesit_app::time::now_iso;
 use pesit_client::engine::Engine;
@@ -166,10 +169,16 @@ async fn main() -> anyhow::Result<()> {
         bootstrap(&store, boot)?;
     }
 
-    let engine = Arc::new(Engine::new(Arc::clone(&store), opts.engine_settings()));
+    let audit =
+        Arc::new(AuditLog::new(Arc::clone(&store)).map_err(|e| anyhow::anyhow!(e.to_string()))?);
+    let engine = Arc::new(Engine::new(
+        Arc::clone(&store),
+        opts.engine_settings(),
+        Arc::clone(&audit),
+    ));
 
     match cli.command.unwrap_or(Command::Serve) {
-        Command::Serve => serve(opts, store, engine).await,
+        Command::Serve => serve(opts, store, engine, audit).await,
         Command::Send {
             target,
             file,
@@ -251,6 +260,7 @@ async fn serve(
     opts: &NodeOptions,
     store: Arc<JsonStore>,
     engine: Arc<Engine>,
+    audit: Arc<AuditLog>,
 ) -> anyhow::Result<()> {
     let tls = opts.listener_tls()?;
     let pki = match pki::PkiState::open(opts.pki_dir.clone(), Arc::clone(&store)) {
@@ -288,11 +298,13 @@ async fn serve(
         manager: Arc::clone(&manager),
         api_key,
         pki,
+        audit: Arc::clone(&audit),
     });
     let client_app = Arc::new(pesit_client::api::App {
         store: Arc::clone(&store),
         engine: Arc::clone(&engine),
         tls_dir: opts.client_tls_dir.clone(),
+        audit: Arc::clone(&audit),
     });
 
     // Admin port: server routes at the root, the transfer API nested under /client, plus the web UI.

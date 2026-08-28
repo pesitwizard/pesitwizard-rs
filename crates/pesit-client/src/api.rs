@@ -27,6 +27,8 @@ pub struct App {
     pub engine: Arc<Engine>,
     /// Directory where uploaded certificates are kept.
     pub tls_dir: PathBuf,
+    /// Audit log.
+    pub audit: std::sync::Arc<pesit_app::audit::AuditLog>,
 }
 
 type AppState = State<Arc<App>>;
@@ -161,6 +163,8 @@ async fn create_server(
         }
     }
     app.store.put(tables::SERVERS, &s.id, &s)?;
+    app.audit
+        .success("config", "create", format!("remote-server:{}", s.name));
     tracing::info!("server '{}' created ({}:{})", s.name, s.host, s.port);
     Ok((StatusCode::CREATED, Json(s)))
 }
@@ -190,6 +194,8 @@ async fn update_server(
 async fn delete_server(State(app): AppState, Path(id): Path<String>) -> ApiResult<StatusCode> {
     let s = find_server(&app.store, &id)?;
     app.store.delete(tables::SERVERS, &s.id)?;
+    app.audit
+        .success("config", "delete", format!("remote-server:{}", s.name));
     Ok(StatusCode::NO_CONTENT)
 }
 

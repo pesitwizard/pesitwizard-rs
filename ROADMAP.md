@@ -15,6 +15,7 @@ one binary, as plain features (config-toggled where relevant), and drop the rest
   transfers) with Playwright end-to-end tests.
 - Connect:Express interoperability (Docker): transfers both ways, sync points, restart, TLS.
 - **Certificate / CA management with native HashiCorp Vault support** (see below).
+- **Audit log** and **configuration backup / restore** (see below).
 
 ## Dropped (no value for a never-commercialised product)
 
@@ -36,15 +37,17 @@ Replaces the enterprise `pki` + admin CA/certificate features. See
 - Managed keystores / truststores wired into the listener TLS layer; REST + web UI tab. ✔
 - Later: certificate rotation, an OCSP responder.
 
-### 2. Audit log
+### 2. Audit log — *done*
 
-- Append-only audit of configuration changes and transfer lifecycle events, queryable via REST and
-  a web UI tab; retention policy. Backed by the existing store (a dedicated table).
+- Append-only audit of configuration changes, listener start/stop, certificate / Vault operations
+  and transfer outcomes, queryable via `/api/v1/audit` and the **System** web UI tab. Backed by the
+  shared store. ✔ (retention policy: later.)
 
-### 3. Backup / restore
+### 3. Backup / restore — *done*
 
-- Export the whole configuration (partners, virtual files, listeners, remote servers, certificates)
-  as a signed JSON/archive bundle; import it back. REST + web UI, and a CLI subcommand.
+- Export the whole configuration (partners, virtual files, listeners, remote servers, Vault config
+  and certificate material) as a JSON bundle and import it back — `/api/v1/backup` and the System
+  web UI tab. ✔ (bundle signing / a CLI subcommand: later.)
 
 ### 4. Clustering / HA — via NATS + JetStream
 

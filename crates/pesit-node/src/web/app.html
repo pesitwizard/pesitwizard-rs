@@ -117,6 +117,7 @@ label.chk input{width:16px;height:16px;accent-color:var(--accent)}
       <button data-tab="send"><span class="ic">⇑</span>Send / Receive</button>
       <button data-tab="certs"><span class="ic">❖</span>Certificates</button>
       <button data-tab="transfers"><span class="ic">⇅</span>Transfers</button>
+      <button data-tab="system"><span class="ic">⚙</span>System</button>
     </nav>
     <div class="side-foot">
       <div><span id="healthDot" class="dot"></span><span id="healthTxt">connecting…</span></div>
@@ -171,6 +172,7 @@ const TABS={
   send:{title:'Send / Receive',sub:'Initiate an outgoing transfer or message',auto:3000,render:renderSend},
   certs:{title:'Certificates',sub:'Keystores, truststores, local CA and Vault PKI',render:renderCerts},
   transfers:{title:'Transfers',sub:'Inbound and outbound records',auto:2500,render:renderTransfers},
+  system:{title:'System',sub:'Audit log and configuration backup / restore',auto:6000,render:renderSystem},
 };
 function go(tab){state.tab=tab;$$('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));$('#title').textContent=TABS[tab].title;$('#subtitle').textContent=TABS[tab].sub;clearInterval(state.timer);draw();if(TABS[tab].auto)state.timer=setInterval(()=>TABS[tab].render(true),TABS[tab].auto)}
 async function draw(){try{await TABS[state.tab].render()}catch(e){$('#view').innerHTML=errBox(e)}}
@@ -254,6 +256,23 @@ async function saveVault(f){const d=formObj(f);const method=d._auth;delete d._au
   try{const r=await api('/certificates/vault',{method:'PUT',body:JSON.stringify(d)});toast('Vault configured','version '+(r.vaultVersion||'?'),'ok');renderCerts()}catch(e){toast('Vault error',e.message,'err')}}
 async function testVault(){toast('Testing Vault…','');try{const r=await api('/certificates/vault/test',{method:'POST'});toast(r.success?'Vault reachable':'Vault error',r.vaultVersion?('version '+r.vaultVersion):r.message,r.success?'ok':'err')}catch(e){toast('Test failed',e.message,'err')}}
 async function clearVault(){if(!confirm('Remove the Vault configuration?'))return;try{await api('/certificates/vault',{method:'DELETE'});toast('Vault removed','','ok');renderCerts()}catch(e){toast('Failed',e.message,'err')}}
+
+async function renderSystem(quiet){
+  const [ev,stats]=await Promise.all([api('/audit?limit=200'),api('/audit/stats')]);
+  const catPill=c=>`<span class="pill ${c==='vault'||c==='certificate'?'info':c==='transfer'?'mut':'warn'}">${esc(c)}</span>`;
+  const rows=ev.length?ev.map(e=>`<tr><td class="muted nowrap">${esc((e.timestamp||'').replace('T',' ').slice(0,19))}</td><td>${catPill(e.category)}</td><td class="mono">${esc(e.action)}</td><td class="mono">${esc(e.target||'—')}</td><td class="muted">${esc(e.actor||'')}</td><td>${e.outcome==='SUCCESS'?'<span class="pill ok">ok</span>':'<span class="pill err">fail</span>'}${e.detail?` <span class="muted" title="${esc(e.detail)}">ⓘ</span>`:''}</td></tr>`).join(''):emptyRow(6,'No audit events yet');
+  if(quiet&&$('#auditBody')){$('#auditBody').innerHTML=rows;return;}
+  $('#view').innerHTML=`
+   <div class="cards"><div class="stat"><div class="n">${stats.total||0}</div><div class="l">Audit events</div></div><div class="stat ${stats.failure?'err':''}"><div class="n">${stats.failure||0}</div><div class="l">Failures</div></div></div>
+   <div class="panel"><div class="panel-h"><h2>Configuration backup</h2><span class="sub">partners, virtual files, listeners, remote servers, certificates</span></div>
+     <div class="row" style="padding:16px 18px;gap:10px"><button class="btn primary" onclick="downloadBackup()">⭳ Download backup</button><button class="btn" onclick="restoreBackup()">⭱ Restore from file…</button></div>
+   </div>
+   <div class="panel"><div class="panel-h"><h2>Audit log</h2><span class="sub">newest first · live</span></div>
+     <table><thead><tr><th>Time (UTC)</th><th>Category</th><th>Action</th><th>Target</th><th>Actor</th><th>Outcome</th></tr></thead><tbody id="auditBody">${rows}</tbody></table></div>`;
+}
+async function downloadBackup(){try{const d=await api('/backup');const blob=new Blob([JSON.stringify(d,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pesitwizard-backup-'+new Date().toISOString().slice(0,10)+'.json';document.body.append(a);a.click();a.remove();URL.revokeObjectURL(a.href);toast('Backup downloaded','','ok')}catch(e){toast('Backup failed',e.message,'err')}}
+let _restore=false;
+function restoreBackup(){_restore=true;$('#fileup').accept='.json';$('#fileup').click()}
 
 function formObj(f){const o={};new FormData(f).forEach((v,k)=>o[k]=v);$$('input[type=checkbox]',f).forEach(c=>o[c.name]=c.checked);Object.keys(o).forEach(k=>{if(o[k]===''||o[k]==null)delete o[k]});return o}
 function progCell(t){const size=t.fileSize;const pct=size?Math.min(100,Math.round(t.bytesTransferred*100/size)):(t.status==='COMPLETED'?100:0);return `<div class="prog"><i style="width:${pct}%"></i></div><span class="muted mono" style="font-size:11px">${bytes(t.bytesTransferred)}${t.lastSyncPoint?' · sync '+t.lastSyncPoint:''}</span>`}
@@ -395,7 +414,9 @@ async function setDefault(id){try{await capi('/servers/'+encodeURIComponent(id)+
 async function testRemote(id){toast('Testing…','');try{const r=await capi('/servers/'+encodeURIComponent(id)+'/test',{method:'POST'});toast(r.success?'Reachable':'Unreachable',r.message,r.success?'ok':'err')}catch(e){toast('Test failed',e.message,'err')}}
 let _caTarget=null;
 function uploadCA(id){_caTarget=id;$('#fileup').accept='.pem,.crt,.cer';$('#fileup').click()}
-$('#fileup').addEventListener('change',async e=>{const f=e.target.files[0];if(!f||!_caTarget)return;const fd=new FormData();fd.append('file',f);fd.append('password','');
+$('#fileup').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;
+  if(_restore){_restore=false;try{const txt=await f.text();const r=await api('/backup/restore',{method:'POST',body:txt});toast('Restore complete',(r.restored||0)+' records','ok');draw()}catch(err){toast('Restore failed',err.message,'err')}e.target.value='';return}
+  if(!_caTarget)return;const fd=new FormData();fd.append('file',f);fd.append('password','');
   try{const r=await capi('/servers/'+encodeURIComponent(_caTarget)+'/tls/truststore',{method:'POST',body:fd});toast(r.success?'CA uploaded':'Upload rejected',r.message||r.error,r.success?'ok':'err');renderRemotes()}catch(e){toast('Upload failed',e.message,'err')}
   e.target.value='';_caTarget=null});
 

@@ -1,5 +1,6 @@
 //! Shared plumbing for the PeSIT Wizard server and client binaries.
 
+pub mod audit;
 pub mod http;
 pub mod store;
 pub mod time;

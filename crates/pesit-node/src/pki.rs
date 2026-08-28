@@ -15,6 +15,7 @@ use pesit_app::store::JsonStore;
 use pesit_pki::{ca::LocalCa, cert, provider::CertRequest, CertStore, VaultConfig, VaultPki};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::sync::Mutex as StdMutex;
 use tokio::sync::Mutex;
 
 use crate::api::App;
@@ -26,7 +27,7 @@ const VAULT_KEY: &str = "vault";
 pub struct PkiState {
     dir: PathBuf,
     store: CertStore,
-    ca: Mutex<Option<LocalCa>>,
+    ca: StdMutex<Option<LocalCa>>,
     vault: Mutex<Option<Arc<VaultPki>>>,
     doc: Arc<JsonStore>,
 }
@@ -68,7 +69,7 @@ impl PkiState {
         Ok(Self {
             dir,
             store,
-            ca: Mutex::new(ca),
+            ca: StdMutex::new(ca),
             vault: Mutex::new(vault),
             doc,
         })
@@ -88,6 +89,93 @@ impl PkiState {
     #[must_use]
     pub fn truststore_file(&self, name: &str) -> Option<PathBuf> {
         self.store.truststore_file(name)
+    }
+
+    /// Export the CA, keystores and truststores as a JSON value (for backups). Contains private keys.
+    #[must_use]
+    pub fn export_material(&self) -> serde_json::Value {
+        let (cert_path, key_path) = self.ca_files();
+        let ca = match (
+            std::fs::read_to_string(&cert_path),
+            std::fs::read_to_string(&key_path),
+        ) {
+            (Ok(cert), Ok(key)) => json!({ "certificate": cert, "privateKey": key }),
+            _ => serde_json::Value::Null,
+        };
+        let keystores: Vec<serde_json::Value> = self
+            .store
+            .list_keystores()
+            .into_iter()
+            .filter_map(|m| {
+                let (cp, kp) = self.store.keystore_files(&m.name)?;
+                let (cert, key) = (
+                    std::fs::read_to_string(cp).ok()?,
+                    std::fs::read_to_string(kp).ok()?,
+                );
+                Some(json!({ "name": m.name, "certificate": cert, "privateKey": key }))
+            })
+            .collect();
+        let truststores: Vec<serde_json::Value> = self
+            .store
+            .list_truststores()
+            .into_iter()
+            .filter_map(|m| {
+                let bundle = std::fs::read_to_string(self.store.truststore_file(&m.name)?).ok()?;
+                Some(json!({ "name": m.name, "certificates": bundle }))
+            })
+            .collect();
+        json!({ "ca": ca, "keystores": keystores, "truststores": truststores })
+    }
+
+    /// Import CA / keystores / truststores from a backup value.
+    pub fn import_material(&self, value: &serde_json::Value) -> Result<(), pesit_pki::PkiError> {
+        if let Some(ca) = value.get("ca").filter(|c| c.is_object()) {
+            if let (Some(cert), Some(key)) = (
+                ca.get("certificate").and_then(serde_json::Value::as_str),
+                ca.get("privateKey").and_then(serde_json::Value::as_str),
+            ) {
+                let (cert_path, key_path) = self.ca_files();
+                std::fs::write(cert_path, cert)?;
+                write_private(&key_path, key)?;
+                *self
+                    .ca
+                    .lock()
+                    .map_err(|_| pesit_pki::PkiError::Gen("CA lock poisoned".into()))? =
+                    Some(LocalCa::from_pem(cert.to_owned(), key.to_owned()));
+            }
+        }
+        for k in value
+            .get("keystores")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let (Some(name), Some(cert), Some(key)) = (
+                k.get("name").and_then(serde_json::Value::as_str),
+                k.get("certificate").and_then(serde_json::Value::as_str),
+                k.get("privateKey").and_then(serde_json::Value::as_str),
+            ) {
+                self.store
+                    .put_keystore(name, cert, key)
+                    .map_err(|e| pesit_pki::PkiError::Gen(e.to_string()))?;
+            }
+        }
+        for t in value
+            .get("truststores")
+            .and_then(serde_json::Value::as_array)
+            .into_iter()
+            .flatten()
+        {
+            if let (Some(name), Some(bundle)) = (
+                t.get("name").and_then(serde_json::Value::as_str),
+                t.get("certificates").and_then(serde_json::Value::as_str),
+            ) {
+                self.store
+                    .put_truststore(name, bundle)
+                    .map_err(|e| pesit_pki::PkiError::Gen(e.to_string()))?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -263,13 +351,21 @@ async fn generate_ca(
     write_private(&key_path, ca.key_pem())?;
     let info = cert::inspect_pem(ca.cert_pem().as_bytes())
         .map_err(|e| ApiError::internal(e.to_string()))?;
-    *state.ca.lock().await = Some(ca);
+    *state
+        .ca
+        .lock()
+        .map_err(|_| ApiError::internal("CA lock poisoned"))? = Some(ca);
+    app.audit
+        .success("certificate", "generate-ca", &b.common_name);
     tracing::info!("generated local CA '{}'", b.common_name);
     Ok(Json(info))
 }
 async fn get_ca(State(app): State<Arc<App>>) -> Result<Json<serde_json::Value>, ApiError> {
     let state = pki(&app)?;
-    let guard = state.ca.lock().await;
+    let guard = state
+        .ca
+        .lock()
+        .map_err(|_| ApiError::internal("CA lock poisoned"))?;
     let Some(ca) = guard.as_ref() else {
         return Err(ApiError::not_found("no local CA configured"));
     };
@@ -315,10 +411,12 @@ async fn issue(
             .ok_or_else(|| ApiError::bad_request("no Vault backend configured"))?;
         (v.issue(&b.request).await.map_err(map_pki)?, "vault")
     } else {
-        let ca =
-            state.ca.lock().await.clone().ok_or_else(|| {
-                ApiError::bad_request("no local CA configured — generate one first")
-            })?;
+        let ca = state
+            .ca
+            .lock()
+            .map_err(|_| ApiError::internal("CA lock poisoned"))?
+            .clone()
+            .ok_or_else(|| ApiError::bad_request("no local CA configured — generate one first"))?;
         (ca.issue(&b.request).map_err(map_pki)?, "local")
     };
     let stored_as = if let (Some(name), Some(key)) = (&b.store_as, &issued.private_key) {
@@ -330,6 +428,11 @@ async fn issue(
     } else {
         None
     };
+    app.audit.success(
+        "certificate",
+        "issue",
+        format!("{} ({kind})", b.request.common_name),
+    );
     Ok(Json(IssueResult {
         backend: kind.to_owned(),
         issued,

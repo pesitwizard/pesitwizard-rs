@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use pesit_app::audit::{AuditLog, Outcome};
 use pesit_app::http::ApiError;
 use pesit_app::store::JsonStore;
 use pesit_app::time::{now_iso, pesit_now};
@@ -50,16 +51,18 @@ pub struct EngineSettings {
 pub struct Engine {
     store: Arc<JsonStore>,
     settings: EngineSettings,
+    audit: Arc<AuditLog>,
     cancels: Mutex<FxHashMap<String, watch::Sender<bool>>>,
 }
 
 impl Engine {
     /// Create the engine.
     #[must_use]
-    pub fn new(store: Arc<JsonStore>, settings: EngineSettings) -> Self {
+    pub fn new(store: Arc<JsonStore>, settings: EngineSettings, audit: Arc<AuditLog>) -> Self {
         Self {
             store,
             settings,
+            audit,
             cancels: Mutex::new(FxHashMap::default()),
         }
     }
@@ -445,6 +448,7 @@ impl Engine {
         outcome: Result<(u64, DataEnd, Diagnostic, Option<String>), SessionError>,
     ) {
         self.unregister_cancel(id);
+        let audit_ok = matches!(&outcome, Ok((_, DataEnd::Completed, d, _)) if d.is_ok());
         self.update(id, |h| {
             h.completed_at = Some(now_iso());
             match outcome {
@@ -484,6 +488,30 @@ impl Engine {
                 }
             }
         });
+        if let Ok(Some(h)) = self.get(id) {
+            let action = h
+                .direction
+                .and_then(|d| serde_json::to_value(d).ok())
+                .and_then(|v| v.as_str().map(str::to_ascii_lowercase))
+                .unwrap_or_else(|| "transfer".into());
+            let target = format!(
+                "{} -> {}",
+                h.local_filename.as_deref().unwrap_or("-"),
+                h.server_name.as_deref().unwrap_or("-")
+            );
+            self.audit.record(
+                "transfer",
+                &action,
+                Some(target),
+                h.partner_id.clone(),
+                if audit_ok {
+                    Outcome::Success
+                } else {
+                    Outcome::Failure
+                },
+                h.error_message.clone(),
+            );
+        }
     }
 
     async fn run_send(

@@ -29,6 +29,8 @@ pub struct App {
     pub api_key: Option<HeaderValue>,
     /// Certificate / CA management (None = disabled).
     pub pki: Option<std::sync::Arc<crate::pki::PkiState>>,
+    /// Audit log.
+    pub audit: std::sync::Arc<pesit_app::audit::AuditLog>,
 }
 
 type AppState = State<Arc<App>>;
@@ -110,6 +112,8 @@ pub fn router(app: Arc<App>) -> Router {
             get(transfers_by_status),
         )
         .merge(crate::pki::routes())
+        .merge(crate::audit::routes())
+        .merge(crate::backup::routes())
         .layer(middleware::from_fn(move |req, next| {
             require_api_key(key.clone(), req, next)
         }))
@@ -193,6 +197,8 @@ async fn create<T: Entity>(
     }
     body.touch(true);
     app.store.put(T::TABLE, body.id(), &body)?;
+    app.audit
+        .success("config", "create", format!("{}:{}", T::NAME, body.id()));
     tracing::info!("{} '{}' created", T::NAME, body.id());
     Ok((StatusCode::CREATED, Json(body)))
 }
@@ -215,6 +221,8 @@ async fn update<T: Entity>(
 
 async fn delete<T: Entity>(State(app): AppState, Path(id): Path<String>) -> ApiResult<StatusCode> {
     if app.store.delete(T::TABLE, &id)? {
+        app.audit
+            .success("config", "delete", format!("{}:{id}", T::NAME));
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(ApiError::not_found(format!("{} '{id}' not found", T::NAME)))
@@ -273,6 +281,7 @@ async fn create_server(
     cfg.updated_at = Some(now_iso());
     cfg.status = crate::model::ServerStatus::Stopped;
     app.store.put(tables::SERVERS, &cfg.server_id, &cfg)?;
+    app.audit.success("listener", "create", &cfg.server_id);
     tracing::info!("server '{}' created (port {})", cfg.server_id, cfg.port);
     if cfg.auto_start {
         if let Err(e) = app.manager.start(&cfg.server_id).await {

@@ -134,3 +134,38 @@ test('certificates: generate a local CA and issue a stored certificate', async (
   await expect(row.locator('.pill.ok', { hasText: 'valid' })).toBeVisible();
   await expect(row).toContainText('leaf.e2e.test');
 });
+
+test('system: audit records actions and a backup restores deleted configuration', async ({ page }) => {
+  page.on('dialog', (d) => d.accept());
+  await open(page);
+
+  // create a partner so there is something to audit and back up
+  await tab(page, 'partners');
+  await page.locator('input[name="id"]').fill('BACKUP_TEST');
+  await page.getByRole('button', { name: 'Create partner' }).click();
+  await expect(page.locator('td.mono', { hasText: /^BACKUP_TEST$/ })).toBeVisible();
+
+  // the audit log shows the config action
+  await tab(page, 'system');
+  await expect(page.locator('#auditBody')).toContainText('BACKUP_TEST');
+  await expect(page.locator('#auditBody tr', { hasText: 'config' }).first()).toBeVisible();
+
+  // download a backup and confirm it carries the partner
+  const [dl] = await Promise.all([page.waitForEvent('download'), page.getByRole('button', { name: 'Download backup' }).click()]);
+  const backupPath = await dl.path();
+  const bundle = JSON.parse(fs.readFileSync(backupPath, 'utf8'));
+  expect(JSON.stringify(bundle.tables.partners)).toContain('BACKUP_TEST');
+
+  // delete the partner
+  await tab(page, 'partners');
+  await page.locator('tr', { hasText: 'BACKUP_TEST' }).getByRole('button', { name: '✕' }).click();
+  await expect(page.locator('td.mono', { hasText: /^BACKUP_TEST$/ })).toHaveCount(0);
+
+  // restore from the downloaded file — the partner comes back
+  await tab(page, 'system');
+  const [chooser] = await Promise.all([page.waitForEvent('filechooser'), page.getByRole('button', { name: 'Restore from file…' }).click()]);
+  await chooser.setFiles(backupPath);
+  await expect(page.locator('.toast', { hasText: 'Restore complete' })).toBeVisible();
+  await tab(page, 'partners');
+  await expect(page.locator('td.mono', { hasText: /^BACKUP_TEST$/ })).toBeVisible();
+});
