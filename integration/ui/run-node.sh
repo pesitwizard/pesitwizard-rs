@@ -20,4 +20,4 @@ export RUST_LOG="${RUST_LOG:-warn,pesitwizard=info,pesit_client=info}"
 "$BIN" \
   --api-port "$ADMIN_PORT" --transfer-port "$TRANSFER_PORT" --api-bind 127.0.0.1 \
   --db "$WORK/node.db" --checkpoint-dir "$WORK/cp" --client-checkpoint-dir "$WORK/cpo" \
-  --receive-dir "$WORK/received" --client-tls-dir "$WORK/tls" 2>&1 | tee "$WORK/node.log"
+  --receive-dir "$WORK/received" --client-tls-dir "$WORK/tls" --pki-dir "$WORK/pki" 2>&1 | tee "$WORK/node.log"

@@ -1,0 +1,28 @@
+[package]
+name = "pesit-pki"
+description = "Certificate and CA management for PeSIT Wizard: local CA (rcgen), X.509 inspection, and a native HashiCorp Vault PKI backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+chrono.workspace = true
+rcgen.workspace = true
+x509-parser.workspace = true
+pem.workspace = true
+time.workspace = true
+reqwest.workspace = true
+sha2.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

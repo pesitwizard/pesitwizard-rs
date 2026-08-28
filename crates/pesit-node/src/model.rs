@@ -303,6 +303,10 @@ pub struct PesitServerConfig {
     pub auto_start: bool,
     /// TLS listener (uses the process TLS settings).
     pub ssl_enabled: bool,
+    /// Name of a managed keystore to use for this listener's TLS identity (overrides the process cert).
+    pub ssl_keystore: Option<String>,
+    /// Name of a managed truststore to verify client certificates.
+    pub ssl_truststore: Option<String>,
     /// Transport header on TLS connections (Connect:Express `TCPIP_HEADER`).
     pub tcpip_header: bool,
     /// Compression capability (0 none, 1 horizontal, 2 vertical, 3 mixed).
@@ -339,6 +343,8 @@ impl Default for PesitServerConfig {
             resync_enabled: true,
             auto_start: false,
             ssl_enabled: false,
+            ssl_keystore: None,
+            ssl_truststore: None,
             tcpip_header: true,
             compression: 0,
             status: ServerStatus::Stopped,

@@ -13,6 +13,7 @@ mod config;
 mod handler;
 mod manager;
 mod model;
+mod pki;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -252,12 +253,20 @@ async fn serve(
     engine: Arc<Engine>,
 ) -> anyhow::Result<()> {
     let tls = opts.listener_tls()?;
+    let pki = match pki::PkiState::open(opts.pki_dir.clone(), Arc::clone(&store)) {
+        Ok(p) => Some(Arc::new(p)),
+        Err(e) => {
+            tracing::error!("certificate management disabled: {e}");
+            None
+        }
+    };
     let manager = Arc::new(ServerManager::new(
         Arc::clone(&store),
         ListenerSettings {
             checkpoint_dir: opts.checkpoint_dir.clone(),
             node_id: opts.node_id.clone(),
             tls,
+            pki: pki.clone(),
         },
     ));
     manager.start_auto().await;
@@ -278,6 +287,7 @@ async fn serve(
         store: Arc::clone(&store),
         manager: Arc::clone(&manager),
         api_key,
+        pki,
     });
     let client_app = Arc::new(pesit_client::api::App {
         store: Arc::clone(&store),

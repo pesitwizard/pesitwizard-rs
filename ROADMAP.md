@@ -14,6 +14,7 @@ one binary, as plain features (config-toggled where relevant), and drop the rest
 - Web UI (dashboard, listeners, partners, virtual files, remote servers, send/receive/message,
   transfers) with Playwright end-to-end tests.
 - Connect:Express interoperability (Docker): transfers both ways, sync points, restart, TLS.
+- **Certificate / CA management with native HashiCorp Vault support** (see below).
 
 ## Dropped (no value for a never-commercialised product)
 
@@ -22,17 +23,18 @@ one binary, as plain features (config-toggled where relevant), and drop the rest
 
 ## Planned
 
-### 1. Certificate / CA management with native HashiCorp Vault support — *flagship*
+### 1. Certificate / CA management with native HashiCorp Vault support — *done*
 
-Replaces the enterprise `pki` + admin CA/certificate/OCSP features.
+Replaces the enterprise `pki` + admin CA/certificate features. See
+[docs/certificates.md](docs/certificates.md).
 
-- Certificate store: keystores (our TLS identity) and truststores (CA bundles), with inspection
-  (subject, issuer, SAN, validity, fingerprint) — parsing via `x509-parser`.
-- Local CA: generate a CA and issue partner / server certificates — via `rcgen`.
-- **Native Vault PKI provider**: issue and sign certificates through Vault's PKI secrets engine
-  (token / AppRole auth), as a `PkiProvider` backend selectable per node — via `reqwest`.
-- Wire issued/managed material into the listener and outbound TLS layers; REST + web UI tab.
-- Later: rotation, OCSP responder.
+- Certificate store: keystores (TLS identity) and truststores (CA bundles), with inspection
+  (subject, issuer, SAN, validity, fingerprint) via `x509-parser`. ✔
+- Local CA: generate a CA and issue partner / server certificates via `rcgen`. ✔
+- **Native Vault PKI backend**: issue and sign through Vault's PKI secrets engine (token / AppRole),
+  configurable per node via `reqwest`. ✔
+- Managed keystores / truststores wired into the listener TLS layer; REST + web UI tab. ✔
+- Later: certificate rotation, an OCSP responder.
 
 ### 2. Audit log
 

@@ -32,3 +32,6 @@ docker-test-tls: release
 
 ui-test: build
 	cd integration/ui && npm ci >/dev/null 2>&1 || npm install && npx playwright install chromium && npx playwright test
+
+vault-test: release
+	bash integration/vault/build-and-test.sh

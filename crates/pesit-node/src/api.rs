@@ -27,6 +27,8 @@ pub struct App {
     pub manager: Arc<ServerManager>,
     /// API key (None = open).
     pub api_key: Option<HeaderValue>,
+    /// Certificate / CA management (None = disabled).
+    pub pki: Option<std::sync::Arc<crate::pki::PkiState>>,
 }
 
 type AppState = State<Arc<App>>;
@@ -107,6 +109,7 @@ pub fn router(app: Arc<App>) -> Router {
             "/api/v1/transfers/status/{status}",
             get(transfers_by_status),
         )
+        .merge(crate::pki::routes())
         .layer(middleware::from_fn(move |req, next| {
             require_api_key(key.clone(), req, next)
         }))

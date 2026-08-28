@@ -85,6 +85,9 @@ form.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
 label.f{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted);font-weight:550}
 label.f input,label.f select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);color:var(--text);font-size:13.5px;font-family:inherit}
 label.f input:focus,label.f select:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+label.f textarea{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);color:var(--text);font-family:var(--mono);font-size:12px;min-height:88px;resize:vertical}
+label.full{grid-column:1/-1}
+pre.pem{grid-column:1/-1;margin:0;padding:10px;background:var(--panel-2);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:11.5px;max-height:220px;overflow:auto;white-space:pre-wrap;word-break:break-all}
 label.chk{flex-direction:row;align-items:center;gap:8px}
 label.chk input{width:16px;height:16px;accent-color:var(--accent)}
 .form-foot{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
@@ -112,6 +115,7 @@ label.chk input{width:16px;height:16px;accent-color:var(--accent)}
       <button data-tab="files"><span class="ic">▦</span>Virtual files</button>
       <button data-tab="remotes"><span class="ic">☁</span>Remote servers</button>
       <button data-tab="send"><span class="ic">⇑</span>Send / Receive</button>
+      <button data-tab="certs"><span class="ic">❖</span>Certificates</button>
       <button data-tab="transfers"><span class="ic">⇅</span>Transfers</button>
     </nav>
     <div class="side-foot">
@@ -165,12 +169,92 @@ const TABS={
   files:{title:'Virtual files',sub:'Logical files exposed to partners',render:renderFiles},
   remotes:{title:'Remote servers',sub:'Servers this node connects out to',render:renderRemotes},
   send:{title:'Send / Receive',sub:'Initiate an outgoing transfer or message',auto:3000,render:renderSend},
+  certs:{title:'Certificates',sub:'Keystores, truststores, local CA and Vault PKI',render:renderCerts},
   transfers:{title:'Transfers',sub:'Inbound and outbound records',auto:2500,render:renderTransfers},
 };
 function go(tab){state.tab=tab;$$('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));$('#title').textContent=TABS[tab].title;$('#subtitle').textContent=TABS[tab].sub;clearInterval(state.timer);draw();if(TABS[tab].auto)state.timer=setInterval(()=>TABS[tab].render(true),TABS[tab].auto)}
 async function draw(){try{await TABS[state.tab].render()}catch(e){$('#view').innerHTML=errBox(e)}}
 const errBox=e=>`<div class="panel"><div class="empty"><div class="big">⚠</div>${esc(e.message||e)}</div></div>`;
 const emptyRow=(n,msg)=>`<tr><td colspan="${n}"><div class="empty"><div class="big">∅</div>${esc(msg)}</div></td></tr>`;
+async function renderCerts(){
+  const [ks,ts,vault]=await Promise.all([api('/certificates/keystores'),api('/certificates/truststores'),api('/certificates/vault')]);
+  let ca=null; try{ca=await api('/certificates/ca')}catch{}
+  const certRow=c=>`<tr><td class="mono">${esc(c.subject)}</td><td>${c.valid?'<span class="pill ok">valid</span>':'<span class="pill err">expired</span>'}${c.isCa?' <span class="pill info">CA</span>':''}</td><td class="muted nowrap">${esc(c.notAfter)}</td></tr>`;
+  $('#view').innerHTML=`
+   <div class="panel"><div class="panel-h"><h2>Local certificate authority</h2></div>
+     ${ca?`<table><thead><tr><th>Subject</th><th>State</th><th>Expires</th></tr></thead><tbody>${certRow(ca.info)}</tbody></table>
+       <form class="grid" onsubmit="regenCa(this);return false"><div class="form-foot"><button class="btn" type="submit">Regenerate CA…</button></div></form>`
+     :`<form class="grid" onsubmit="genCa(this);return false">
+        <label class="f">Common name<input name="commonName" required placeholder="PeSIT Wizard CA"></label>
+        <label class="f">Organization<input name="organization" placeholder="(optional)"></label>
+        <label class="f">Validity (days)<input name="ttlDays" type="number" value="3650"></label>
+        <div class="form-foot"><button class="btn primary" type="submit">Generate local CA</button></div></form>`}
+   </div>
+   <div class="panel"><div class="panel-h"><h2>Issue certificate</h2><span class="sub">from the local CA or Vault</span></div>
+     <form class="grid" onsubmit="issueCert(this);return false">
+       <label class="f">Backend<select name="backend"><option value="local">Local CA</option><option value="vault">Vault PKI</option></select></label>
+       <label class="f">Common name<input name="commonName" required placeholder="node.example.com"></label>
+       <label class="f">SANs (comma sep.)<input name="_sans" placeholder="DNS:node.example.com,IP:10.0.0.1"></label>
+       <label class="f">Validity (days)<input name="ttlDays" type="number" value="365"></label>
+       <label class="f">Store as keystore<input name="storeAs" placeholder="(optional name)"></label>
+       <label class="f chk"><input type="checkbox" name="serverAuth" checked>Server auth</label>
+       <label class="f chk"><input type="checkbox" name="clientAuth" checked>Client auth</label>
+       <div class="form-foot"><button class="btn primary" type="submit">Issue</button></div>
+       <pre class="pem hide" id="issuedPem"></pre>
+     </form>
+   </div>
+   <div class="panel"><div class="panel-h"><h2>Keystores</h2><span class="sub">${ks.length} · certificate + private key</span></div>
+     <table><thead><tr><th>Name</th><th>Subject</th><th>State</th><th>Expires</th><th></th></tr></thead><tbody>
+     ${ks.length?ks.map(k=>`<tr><td class="mono">${esc(k.name)}</td><td class="mono">${esc(k.info.subject)}</td><td>${k.info.valid?'<span class="pill ok">valid</span>':'<span class="pill err">expired</span>'}</td><td class="muted nowrap">${esc(k.info.notAfter)}</td><td><button class="btn sm danger" onclick="delCert('keystores','${esc(k.name)}')">✕</button></td></tr>`).join(''):emptyRow(5,'No keystore yet')}
+     </tbody></table>
+     <form class="grid" onsubmit="importKs(this);return false">
+       <label class="f">Name<input name="name" required placeholder="node-tls"></label>
+       <label class="f full">Certificate (PEM)<textarea name="certificate" required placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+       <label class="f full">Private key (PEM)<textarea name="privateKey" required placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+       <div class="form-foot"><button class="btn" type="submit">Import keystore</button></div>
+     </form>
+   </div>
+   <div class="panel"><div class="panel-h"><h2>Truststores</h2><span class="sub">${ts.length} · CA bundles</span></div>
+     <table><thead><tr><th>Name</th><th>Certificates</th><th></th></tr></thead><tbody>
+     ${ts.length?ts.map(t=>`<tr><td class="mono">${esc(t.name)}</td><td class="muted">${t.certs.map(c=>esc(c.subject)).join('<br>')}</td><td><button class="btn sm danger" onclick="delCert('truststores','${esc(t.name)}')">✕</button></td></tr>`).join(''):emptyRow(3,'No truststore yet')}
+     </tbody></table>
+     <form class="grid" onsubmit="importTs(this);return false">
+       <label class="f">Name<input name="name" required placeholder="roots"></label>
+       <label class="f full">CA certificates (PEM)<textarea name="certificates" required placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
+       <div class="form-foot"><button class="btn" type="submit">Import truststore</button></div>
+     </form>
+   </div>
+   <div class="panel"><div class="panel-h"><h2>Vault PKI</h2>${vault.configured?`<span class="pill ok">configured</span>`:`<span class="pill mut">not configured</span>`}</div>
+     <form class="grid" onsubmit="saveVault(this);return false">
+       <label class="f">Address<input name="address" required placeholder="https://vault:8200" value="${esc(vault.address||'')}"></label>
+       <label class="f">PKI mount<input name="mount" value="${esc(vault.mount||'pki')}"></label>
+       <label class="f">Role<input name="role" required placeholder="pesit" value="${esc(vault.role||'')}"></label>
+       <label class="f">Auth<select name="_auth" onchange="vaultAuth(this)"><option value="token">Token</option><option value="approle">AppRole</option></select></label>
+       <label class="f _tok">Token<input name="token" placeholder="s.xxxx"></label>
+       <label class="f _appr hide">Role ID<input name="roleId"></label>
+       <label class="f _appr hide">Secret ID<input name="secretId"></label>
+       <label class="f">Namespace<input name="namespace" placeholder="(optional)"></label>
+       <label class="f chk"><input type="checkbox" name="insecure">Skip TLS verify</label>
+       <div class="form-foot">${vault.configured?`<button class="btn" type="button" onclick="testVault()">Test</button><button class="btn danger" type="button" onclick="clearVault()">Remove</button>`:''}<button class="btn primary" type="submit">Save &amp; test</button></div>
+     </form>
+   </div>`;
+}
+async function genCa(f){const d=formObj(f);d.ttlDays=+d.ttlDays;try{await api('/certificates/ca',{method:'POST',body:JSON.stringify(d)});toast('Local CA generated',d.commonName,'ok');renderCerts()}catch(e){toast('Failed',e.message,'err')}}
+function regenCa(){if(confirm('Regenerate the CA? Existing issued certificates will no longer chain to it.')){const el=document.querySelector('[name=commonName]');genCa2()}}
+async function genCa2(){const cn=prompt('CA common name','PeSIT Wizard CA');if(!cn)return;try{await api('/certificates/ca',{method:'POST',body:JSON.stringify({commonName:cn,ttlDays:3650})});toast('CA regenerated','','ok');renderCerts()}catch(e){toast('Failed',e.message,'err')}}
+async function issueCert(f){const d=formObj(f);const sans=(d._sans||'').split(',').map(x=>x.trim()).filter(Boolean);delete d._sans;d.sans=sans;d.ttlDays=+d.ttlDays;
+  try{const r=await api('/certificates/issue',{method:'POST',body:JSON.stringify(d)});const pre=$('#issuedPem');pre.classList.remove('hide');pre.textContent=r.certificate+(r.privateKey?('\n'+r.privateKey):'');toast('Certificate issued','via '+r.backend+(r.storedAs?(' · stored as '+r.storedAs):''),'ok');if(r.storedAs)renderCerts()}catch(e){toast('Issue failed',e.message,'err')}}
+async function importKs(f){const d=formObj(f);try{await api('/certificates/keystores',{method:'POST',body:JSON.stringify(d)});toast('Keystore imported',d.name,'ok');renderCerts()}catch(e){toast('Import failed',e.message,'err')}}
+async function importTs(f){const d=formObj(f);try{await api('/certificates/truststores',{method:'POST',body:JSON.stringify(d)});toast('Truststore imported',d.name,'ok');renderCerts()}catch(e){toast('Import failed',e.message,'err')}}
+async function delCert(kind,name){if(!confirm('Delete '+name+'?'))return;try{await api('/certificates/'+kind+'/'+encodeURIComponent(name),{method:'DELETE'});toast('Deleted',name,'ok');renderCerts()}catch(e){toast('Delete failed',e.message,'err')}}
+function vaultAuth(sel){const a=sel.value;$$('._tok').forEach(e=>e.classList.toggle('hide',a!=='token'));$$('._appr').forEach(e=>e.classList.toggle('hide',a!=='approle'))}
+async function saveVault(f){const d=formObj(f);const method=d._auth;delete d._auth;
+  const auth=method==='approle'?{method:'appRole',roleId:d.roleId,secretId:d.secretId}:{method:'token',token:d.token};
+  ['token','roleId','secretId'].forEach(k=>delete d[k]);d.auth=auth;
+  try{const r=await api('/certificates/vault',{method:'PUT',body:JSON.stringify(d)});toast('Vault configured','version '+(r.vaultVersion||'?'),'ok');renderCerts()}catch(e){toast('Vault error',e.message,'err')}}
+async function testVault(){toast('Testing Vault…','');try{const r=await api('/certificates/vault/test',{method:'POST'});toast(r.success?'Vault reachable':'Vault error',r.vaultVersion?('version '+r.vaultVersion):r.message,r.success?'ok':'err')}catch(e){toast('Test failed',e.message,'err')}}
+async function clearVault(){if(!confirm('Remove the Vault configuration?'))return;try{await api('/certificates/vault',{method:'DELETE'});toast('Vault removed','','ok');renderCerts()}catch(e){toast('Failed',e.message,'err')}}
+
 function formObj(f){const o={};new FormData(f).forEach((v,k)=>o[k]=v);$$('input[type=checkbox]',f).forEach(c=>o[c.name]=c.checked);Object.keys(o).forEach(k=>{if(o[k]===''||o[k]==null)delete o[k]});return o}
 function progCell(t){const size=t.fileSize;const pct=size?Math.min(100,Math.round(t.bytesTransferred*100/size)):(t.status==='COMPLETED'?100:0);return `<div class="prog"><i style="width:${pct}%"></i></div><span class="muted mono" style="font-size:11px">${bytes(t.bytesTransferred)}${t.lastSyncPoint?' · sync '+t.lastSyncPoint:''}</span>`}
 

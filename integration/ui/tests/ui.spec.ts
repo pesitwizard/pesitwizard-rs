@@ -105,3 +105,32 @@ test('the admin API rejects requests without the API key', async ({ page }) => {
   const res = await page.request.get('/api/v1/config/partners');
   expect(res.status()).toBe(401);
 });
+
+test('certificates: generate a local CA and issue a stored certificate', async ({ page }) => {
+  await open(page);
+  await tab(page, 'certs');
+
+  const caPanel = page.locator('.panel', { hasText: 'Local certificate authority' });
+  const genBtn = caPanel.getByRole('button', { name: 'Generate local CA' });
+  if (await genBtn.count()) {
+    await caPanel.locator('input[name="commonName"]').fill('PeSIT Wizard E2E CA');
+    await genBtn.click();
+    await expect(page.locator('.toast', { hasText: 'Local CA generated' })).toBeVisible();
+  }
+  await expect(caPanel.locator('td.mono', { hasText: 'PeSIT Wizard E2E CA' })).toBeVisible();
+
+  // issue a certificate from the local CA and store it as a keystore
+  const issue = page.locator('.panel', { hasText: 'Issue certificate' });
+  await issue.locator('input[name="commonName"]').fill('leaf.e2e.test');
+  await issue.locator('input[name="_sans"]').fill('DNS:leaf.e2e.test,IP:127.0.0.1');
+  await issue.locator('input[name="storeAs"]').fill('issued-leaf');
+  await issue.getByRole('button', { name: 'Issue' }).click();
+  await expect(page.locator('.toast', { hasText: 'Certificate issued' })).toBeVisible();
+
+  // it now appears as a keystore, valid, with the right subject
+  const ksPanel = page.locator('.panel', { hasText: 'Keystores' });
+  const row = ksPanel.locator('tr', { hasText: 'issued-leaf' });
+  await expect(row.locator('td.mono', { hasText: 'issued-leaf' })).toBeVisible();
+  await expect(row.locator('.pill.ok', { hasText: 'valid' })).toBeVisible();
+  await expect(row).toContainText('leaf.e2e.test');
+});

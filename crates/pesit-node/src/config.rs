@@ -47,6 +47,14 @@ pub struct NodeOptions {
         global = true
     )]
     pub db: PathBuf,
+    /// Directory for certificate / CA material.
+    #[arg(
+        long,
+        env = "PESIT_PKI_DIR",
+        default_value = "/data/pki",
+        global = true
+    )]
+    pub pki_dir: PathBuf,
     /// Checkpoint directory for inbound (server) transfers.
     #[arg(
         long,

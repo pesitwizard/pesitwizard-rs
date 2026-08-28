@@ -9,7 +9,7 @@ use std::time::Duration;
 use pesit_app::store::JsonStore;
 use pesit_app::time::now_iso;
 use pesit_io::responder::{self, ResponderConfig, ServerHandler};
-use pesit_io::tls::{self, TlsAcceptor, TlsServerSettings};
+use pesit_io::tls::{self, TlsAcceptor, TlsServerSettings, TlsVersion};
 use pesit_io::transport::Framing;
 use rustc_hash::FxHashMap;
 use tokio::net::TcpListener;
@@ -55,6 +55,8 @@ pub struct ListenerSettings {
     pub node_id: String,
     /// TLS settings when TLS is enabled.
     pub tls: Option<TlsServerSettings>,
+    /// Certificate store, for listeners that reference a managed keystore / truststore.
+    pub pki: Option<std::sync::Arc<crate::pki::PkiState>>,
 }
 
 /// Starts and stops listeners.
@@ -109,6 +111,44 @@ impl ServerManager {
         }
     }
 
+    /// Resolve the TLS settings for a listener: a referenced managed keystore/truststore, or the
+    /// process-wide certificate configuration.
+    fn listener_tls(&self, cfg: &PesitServerConfig) -> Result<TlsServerSettings, ManagerError> {
+        if let Some(ks) = cfg.ssl_keystore.as_deref().filter(|s| !s.is_empty()) {
+            let pki = self.settings.pki.as_ref().ok_or_else(|| {
+                ManagerError::Tls(
+                    "listener references a keystore but certificate management is disabled".into(),
+                )
+            })?;
+            let (cert, key) = pki
+                .keystore_files(ks)
+                .ok_or_else(|| ManagerError::Tls(format!("keystore '{ks}' not found")))?;
+            let ca_file = cfg
+                .ssl_truststore
+                .as_deref()
+                .filter(|s| !s.is_empty())
+                .and_then(|t| pki.truststore_file(t))
+                .map(|p| p.to_string_lossy().into_owned())
+                .or_else(|| self.settings.tls.as_ref().and_then(|t| t.ca_file.clone()));
+            let (min_version, require_client_cert) = self
+                .settings
+                .tls
+                .as_ref()
+                .map_or((Some(TlsVersion::V1_2), false), |t| {
+                    (t.min_version, t.require_client_cert)
+                });
+            Ok(TlsServerSettings {
+                cert_file: cert.to_string_lossy().into_owned(),
+                key_file: key.to_string_lossy().into_owned(),
+                ca_file,
+                require_client_cert,
+                min_version,
+            })
+        } else {
+            self.settings.tls.clone().ok_or_else(|| ManagerError::Tls("listener requires TLS but no certificate is configured (set a keystore or PESIT_SSL_CERT_PATH/KEY_PATH)".into()))
+        }
+    }
+
     fn set_status(&self, server_id: &str, status: ServerStatus) {
         let _ = self
             .store
@@ -133,14 +173,10 @@ impl ServerManager {
             .get(tables::SERVERS, server_id)?
             .ok_or_else(|| ManagerError::NotFound(server_id.to_owned()))?;
         let acceptor = if cfg.ssl_enabled {
-            let Some(settings) = &self.settings.tls else {
-                self.set_status(server_id, ServerStatus::Error);
-                return Err(ManagerError::Tls(
-                    "listener requires TLS but PESIT_SSL_ENABLED / certificate paths are not set"
-                        .into(),
-                ));
-            };
-            Some(tls::acceptor(settings).map_err(|e| ManagerError::Tls(e.to_string()))?)
+            let settings = self
+                .listener_tls(&cfg)
+                .inspect_err(|_| self.set_status(server_id, ServerStatus::Error))?;
+            Some(tls::acceptor(&settings).map_err(|e| ManagerError::Tls(e.to_string()))?)
         } else {
             None
         };
