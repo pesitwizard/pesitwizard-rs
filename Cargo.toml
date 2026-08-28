@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/pesit-core",
+    "crates/pesit-io",
+    "crates/pesit-app",
+    "crates/pesit-node",
+    "crates/pesit-client",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "Apache-2.0"
+authors = ["PeSIT Wizard contributors"]
+repository = "https://github.com/pesitwizard/pesitwizard-rs"
+
+[workspace.dependencies]
+pesit-core = { path = "crates/pesit-core" }
+pesit-io = { path = "crates/pesit-io" }
+pesit-app = { path = "crates/pesit-app" }
+pesit-client = { path = "crates/pesit-client" }
+sha2 = "0.10"
+hex = "0.4"
+anyhow = "1"
+thiserror = "2"
+tokio = { version = "1.45", features = ["rt-multi-thread", "net", "io-util", "fs", "sync", "time", "macros", "signal"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12", "logging"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2"
+rustls-pki-types = "1"
+webpki-roots = "0.26"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_yaml = "0.9"
+axum = { version = "0.8", features = ["json", "macros", "multipart"] }
+tower-http = { version = "0.6", features = ["trace", "cors"] }
+clap = { version = "4", features = ["derive", "env"] }
+rusqlite = { version = "0.35", features = ["bundled"] }
+rustc-hash = "2"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde", "clock"] }
+bytes = "1"
+rand = "0.9"
+tempfile = "3"
+proptest = "1"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+unwrap_used = "deny"
+expect_used = "deny"
+module_name_repetitions = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+cast_possible_truncation = "allow"
+cast_possible_wrap = "allow"
+cast_sign_loss = "allow"
+struct_excessive_bools = "allow"
+too_many_lines = "allow"
+doc_markdown = "allow"
+similar_names = "allow"
+needless_pass_by_value = "allow"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

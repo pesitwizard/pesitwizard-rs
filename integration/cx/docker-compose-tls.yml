@@ -1,0 +1,87 @@
+# TLS interoperability with Connect:Express (SSLPARM1 server mode, SSLPARM2 client mode,
+# TCPIP_HEADER=N). One unified `pw-node` process, aliased as pw-server and pw-client.
+# Certificates come from the Java project's generated test PKI.
+services:
+  cx-server-tls:
+    build:
+      context: ${CX_DOCKER_DIR:-../../../pesitwizard/integration-tests/cx-integration/docker/cx}
+    container_name: cx-server-tls
+    environment:
+      - TOM_DIR=/home/cxuser/cx
+      - CX_SSL_ENABLED=true
+      - CX_SSL_SSLPARM_SERVER=SSLPARM1
+      - CX_SSL_SSLPARM_CLIENT=SSLPARM2
+      - RUN_TRANSFER_TESTS=false
+    volumes:
+      - cx-send-tls:/tmp/cx-send
+      - cx-received-tls:/tmp/cx-received
+      - ${CERTS_DIR:-../../../pesitwizard/integration-tests/cx-integration/docker/certs}:/app/certs:ro
+    networks:
+      - pesit-tls
+    depends_on:
+      pw-node:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -tuln | grep -q ':5001 ' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  pw-node:
+    build:
+      context: ./pw-node
+    container_name: pw-node
+    environment:
+      - PESIT_API_KEY=integration-test-key
+      - PESIT_SSL_ENABLED=true
+      - PESIT_SSL_CERT_PATH=/app/certs/pw-server-cert.pem
+      - PESIT_SSL_KEY_PATH=/app/certs/pw-server-key.pem
+      - PESIT_SSL_CA_CERT_PATH=/app/certs/ca-cert.pem
+      - PESIT_SSL_CLIENT_AUTH=NONE
+      - PESIT_SSL_PROTOCOL=TLSv1.2
+      - PESIT_CLIENT_SSL_CA_CERT_PATH=/app/certs/ca-cert.pem
+      - PESIT_CLIENT_SSL_CERT_PATH=/app/certs/pw-client-cert.pem
+      - PESIT_CLIENT_SSL_KEY_PATH=/app/certs/pw-client-key.pem
+    volumes:
+      - pw-received-tls:/data/received
+      - pw-client-send-tls:/data/send
+      - ${CERTS_DIR:-../../../pesitwizard/integration-tests/cx-integration/docker/certs}:/app/certs:ro
+    networks:
+      pesit-tls:
+        aliases: [pw-server, pw-client]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  test-runner:
+    image: ubuntu:22.04
+    container_name: tls-test-runner
+    volumes:
+      - ./tests:/tests:ro
+      - ${CERTS_DIR:-../../../pesitwizard/integration-tests/cx-integration/docker/certs}:/certs:ro
+      - cx-send-tls:/tmp/cx-send
+      - cx-received-tls:/tmp/cx-received
+      - pw-received-tls:/tmp/pw-received
+      - pw-client-send-tls:/tmp/pw-client-send
+    networks:
+      - pesit-tls
+    depends_on:
+      pw-node:
+        condition: service_healthy
+      cx-server-tls:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "/tests/run-tls-tests.sh"]
+
+networks:
+  pesit-tls:
+    driver: bridge
+
+volumes:
+  pw-received-tls:
+  cx-send-tls:
+  cx-received-tls:
+  pw-client-send-tls:

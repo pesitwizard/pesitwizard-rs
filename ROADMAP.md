@@ -1,0 +1,59 @@
+# Roadmap
+
+PeSIT Wizard is being consolidated into a **single open-source `pesitwizard` node** — no commercial
+edition, no license gating. The core (protocol, listeners, outbound engine, REST APIs, web UI) is in
+place. The capabilities below carry the worthwhile parts of the former "enterprise" modules into the
+one binary, as plain features (config-toggled where relevant), and drop the rest.
+
+## Delivered
+
+- Single node: listen + initiate in one process, shared config store, two REST surfaces, web UI.
+- PeSIT E: CRC, compression, multi-article DTF, segmentation, synchronisation points with window,
+  restart / resynchronisation, clean cancellation, text/binary record formats, TLS (with/without
+  transport header), pre-connection.
+- Web UI (dashboard, listeners, partners, virtual files, remote servers, send/receive/message,
+  transfers) with Playwright end-to-end tests.
+- Connect:Express interoperability (Docker): transfers both ways, sync points, restart, TLS.
+
+## Dropped (no value for a never-commercialised product)
+
+- License management and the license-admin tool.
+- The OSS / enterprise split itself: everything is open source, in one binary.
+
+## Planned
+
+### 1. Certificate / CA management with native HashiCorp Vault support — *flagship*
+
+Replaces the enterprise `pki` + admin CA/certificate/OCSP features.
+
+- Certificate store: keystores (our TLS identity) and truststores (CA bundles), with inspection
+  (subject, issuer, SAN, validity, fingerprint) — parsing via `x509-parser`.
+- Local CA: generate a CA and issue partner / server certificates — via `rcgen`.
+- **Native Vault PKI provider**: issue and sign certificates through Vault's PKI secrets engine
+  (token / AppRole auth), as a `PkiProvider` backend selectable per node — via `reqwest`.
+- Wire issued/managed material into the listener and outbound TLS layers; REST + web UI tab.
+- Later: rotation, OCSP responder.
+
+### 2. Audit log
+
+- Append-only audit of configuration changes and transfer lifecycle events, queryable via REST and
+  a web UI tab; retention policy. Backed by the existing store (a dedicated table).
+
+### 3. Backup / restore
+
+- Export the whole configuration (partners, virtual files, listeners, remote servers, certificates)
+  as a signed JSON/archive bundle; import it back. REST + web UI, and a CLI subcommand.
+
+### 4. Clustering / HA — via NATS + JetStream
+
+Replaces the enterprise JGroups cluster module with a Rust-native design (`async-nats`).
+
+- Shared configuration propagation through a JetStream KV bucket.
+- Transfer-record replication and cluster-wide history via JetStream streams.
+- Leader election / work distribution and failover for listeners and scheduled transfers.
+- Node membership and health via NATS.
+
+## Related
+
+- Update the project website: remove the commercial/enterprise messaging, position PeSIT Wizard as
+  fully open source.

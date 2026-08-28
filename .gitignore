@@ -1,0 +1,5 @@
+/target
+/.notes/
+**/*.rs.bk
+Cargo.lock.orig
+.DS_Store

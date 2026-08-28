@@ -1,0 +1,40 @@
+[package]
+name = "pesit-node"
+description = "PeSIT Wizard node: a single PeSIT E process that listens for and initiates transfers, with partners, virtual files, transfer records and a REST API + web UI"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pesitwizard"
+path = "src/main.rs"
+
+[dependencies]
+pesit-core.workspace = true
+pesit-io.workspace = true
+pesit-client.workspace = true
+pesit-app.workspace = true
+rustc-hash.workspace = true
+sha2.workspace = true
+hex.workspace = true
+tokio.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+serde_yaml.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+clap.workspace = true
+rusqlite.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

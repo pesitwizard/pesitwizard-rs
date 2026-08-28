@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en" data-theme="auto">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PeSIT Wizard</title>
+<style>
+:root{
+  --bg:#f4f6fb; --panel:#ffffff; --panel-2:#f8fafc; --border:#e2e8f0; --text:#0f172a;
+  --muted:#64748b; --accent:#4f46e5; --accent-2:#6366f1; --accent-soft:#eef2ff;
+  --ok:#16a34a; --ok-soft:#dcfce7; --warn:#d97706; --warn-soft:#fef3c7;
+  --err:#dc2626; --err-soft:#fee2e2; --info:#0891b2; --info-soft:#cffafe;
+  --shadow:0 1px 3px rgba(15,23,42,.08),0 1px 2px rgba(15,23,42,.04);
+  --shadow-lg:0 10px 30px rgba(15,23,42,.12); --radius:12px; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+@media (prefers-color-scheme:dark){:root[data-theme=auto]{
+  --bg:#0b1120; --panel:#131a2b; --panel-2:#0f1626; --border:#243049; --text:#e5e9f2;
+  --muted:#94a3b8; --accent:#818cf8; --accent-2:#a5b4fc; --accent-soft:#1e2540;
+  --ok:#4ade80; --ok-soft:#0d2b1a; --warn:#fbbf24; --warn-soft:#2c2410;
+  --err:#f87171; --err-soft:#2c1414; --info:#22d3ee; --info-soft:#0c2a30;
+  --shadow:0 1px 3px rgba(0,0,0,.4); --shadow-lg:0 12px 34px rgba(0,0,0,.5);
+}}
+:root[data-theme=dark]{
+  --bg:#0b1120; --panel:#131a2b; --panel-2:#0f1626; --border:#243049; --text:#e5e9f2;
+  --muted:#94a3b8; --accent:#818cf8; --accent-2:#a5b4fc; --accent-soft:#1e2540;
+  --ok:#4ade80; --ok-soft:#0d2b1a; --warn:#fbbf24; --warn-soft:#2c2410;
+  --err:#f87171; --err-soft:#2c1414; --info:#22d3ee; --info-soft:#0c2a30;
+  --shadow:0 1px 3px rgba(0,0,0,.4); --shadow-lg:0 12px 34px rgba(0,0,0,.5);
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5}
+a{color:var(--accent);text-decoration:none}
+.app{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--border);padding:20px 14px;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;gap:4px}
+.brand{display:flex;align-items:center;gap:10px;padding:6px 10px 18px;font-weight:700;font-size:16px}
+.brand .logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent-2));display:grid;place-items:center;color:#fff;font-size:17px;box-shadow:var(--shadow)}
+.brand small{display:block;font-weight:500;color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+nav button{display:flex;align-items:center;gap:11px;width:100%;padding:9px 12px;border:0;background:transparent;color:var(--muted);border-radius:9px;cursor:pointer;font-size:14px;font-weight:500;text-align:left;transition:.12s}
+nav button:hover{background:var(--panel-2);color:var(--text)}
+nav button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}
+nav button .ic{width:18px;text-align:center;font-size:15px}
+.side-foot{margin-top:auto;padding-top:14px;border-top:1px solid var(--border);font-size:12px;color:var(--muted)}
+.side-foot .dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px}
+.side-foot .dot.up{background:var(--ok);box-shadow:0 0 0 3px var(--ok-soft)}
+.side-foot .dot.down{background:var(--err);box-shadow:0 0 0 3px var(--err-soft)}
+main{padding:26px 30px;max-width:1180px;width:100%}
+.top{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:22px;flex-wrap:wrap}
+.top h1{margin:0;font-size:22px;font-weight:700}
+.top p{margin:2px 0 0;color:var(--muted)}
+.top-actions{display:flex;gap:8px;align-items:center}
+.key-wrap{display:flex;align-items:center;gap:6px;background:var(--panel);border:1px solid var(--border);border-radius:9px;padding:5px 8px;box-shadow:var(--shadow)}
+.key-wrap input{border:0;background:transparent;color:var(--text);font-family:var(--mono);font-size:12px;width:150px;outline:none}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:22px}
+.stat{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow)}
+.stat .n{font-size:28px;font-weight:700;letter-spacing:-.02em}
+.stat .l{color:var(--muted);font-size:12.5px;text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
+.stat .l::before{content:"";display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle;background:var(--accent)}
+.stat.ok .l::before{background:var(--ok)} .stat.err .l::before{background:var(--err)} .stat.warn .l::before{background:var(--warn)} .stat.info .l::before{background:var(--info)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:22px;overflow:hidden}
+.panel-h{display:flex;align-items:center;justify-content:space-between;padding:15px 18px;border-bottom:1px solid var(--border);gap:10px;flex-wrap:wrap}
+.panel-h h2{margin:0;font-size:15px;font-weight:650}
+.panel-h .sub{color:var(--muted);font-size:12.5px;font-weight:400}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);font-weight:600;padding:11px 18px;border-bottom:1px solid var(--border);white-space:nowrap}
+td{padding:12px 18px;border-bottom:1px solid var(--border);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--panel-2)}
+.mono{font-family:var(--mono);font-size:12.5px}
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.pill.ok{background:var(--ok-soft);color:var(--ok)} .pill.err{background:var(--err-soft);color:var(--err)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)} .pill.info{background:var(--info-soft);color:var(--info)}
+.pill.mut{background:var(--panel-2);color:var(--muted)}
+.btn{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);background:var(--panel);color:var(--text);padding:7px 13px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:550;transition:.12s}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.primary:hover{background:var(--accent-2);border-color:var(--accent-2);color:#fff}
+.btn.sm{padding:5px 9px;font-size:12px}
+.btn.danger:hover{border-color:var(--err);color:var(--err)}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+.empty{padding:34px;text-align:center;color:var(--muted)}
+.empty .big{font-size:30px;margin-bottom:6px;opacity:.5}
+form.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:13px;padding:18px}
+label.f{display:flex;flex-direction:column;gap:5px;font-size:12.5px;color:var(--muted);font-weight:550}
+label.f input,label.f select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:var(--panel-2);color:var(--text);font-size:13.5px;font-family:inherit}
+label.f input:focus,label.f select:focus{outline:2px solid var(--accent-soft);border-color:var(--accent)}
+label.chk{flex-direction:row;align-items:center;gap:8px}
+label.chk input{width:16px;height:16px;accent-color:var(--accent)}
+.form-foot{grid-column:1/-1;display:flex;justify-content:flex-end;gap:8px}
+.toast-wrap{position:fixed;right:18px;bottom:18px;display:flex;flex-direction:column;gap:8px;z-index:50}
+.toast{background:var(--panel);border:1px solid var(--border);border-left:3px solid var(--accent);border-radius:9px;padding:11px 15px;box-shadow:var(--shadow-lg);min-width:220px;max-width:360px;animation:slide .2s ease}
+.toast.ok{border-left-color:var(--ok)} .toast.err{border-left-color:var(--err)}
+.toast .t{font-weight:600;margin-bottom:1px} .toast .m{color:var(--muted);font-size:12.5px;word-break:break-word}
+@keyframes slide{from{transform:translateX(20px);opacity:0}to{transform:none;opacity:1}}
+.prog{height:6px;border-radius:4px;background:var(--panel-2);overflow:hidden;min-width:90px}
+.prog>i{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-2));transition:width .3s}
+.hide{display:none!important}
+.icon-btn{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:15px;padding:4px 7px;border-radius:7px}
+.icon-btn:hover{background:var(--panel-2);color:var(--text)}
+.muted{color:var(--muted)} .nowrap{white-space:nowrap}
+@media(max-width:780px){.app{grid-template-columns:1fr}aside{position:static;height:auto;flex-direction:row;flex-wrap:wrap;gap:4px}main{padding:18px}nav{display:flex;flex-wrap:wrap;gap:4px}}
+</style>
+</head><body>
+<div class="app">
+  <aside>
+    <div class="brand"><span class="logo">⇄</span><div>PeSIT Wizard<small>Node</small></div></div>
+    <nav id="nav">
+      <button data-tab="dashboard" class="on"><span class="ic">▤</span>Dashboard</button>
+      <button data-tab="listeners"><span class="ic">◉</span>Listeners</button>
+      <button data-tab="partners"><span class="ic">◈</span>Partners</button>
+      <button data-tab="files"><span class="ic">▦</span>Virtual files</button>
+      <button data-tab="remotes"><span class="ic">☁</span>Remote servers</button>
+      <button data-tab="send"><span class="ic">⇑</span>Send / Receive</button>
+      <button data-tab="transfers"><span class="ic">⇅</span>Transfers</button>
+    </nav>
+    <div class="side-foot">
+      <div><span id="healthDot" class="dot"></span><span id="healthTxt">connecting…</span></div>
+      <div style="margin-top:8px"><a href="#" id="themeToggle">◑ Toggle theme</a></div>
+    </div>
+  </aside>
+  <main>
+    <div class="top">
+      <div><h1 id="title">Dashboard</h1><p id="subtitle">Overview</p></div>
+      <div class="top-actions">
+        <div class="key-wrap" title="X-API-Key sent with admin requests">🔑<input id="apiKey" placeholder="API key" autocomplete="off"></div>
+        <button class="btn sm" id="refreshBtn">↻ Refresh</button>
+      </div>
+    </div>
+    <div id="view"></div>
+  </main>
+</div>
+<div class="toast-wrap" id="toasts"></div>
+<input type="file" id="fileup" class="hide">
+<script>
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>[...r.querySelectorAll(s)];
+const state={tab:'dashboard',timer:null,tview:'in'};
+const KEY_LS='pw-apikey', THEME_LS='pw-theme';
+function apiKey(){return localStorage.getItem(KEY_LS)||''}
+function esc(s){return String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))}
+function bytes(n){n=+n||0;const u=['B','KB','MB','GB','TB'];let i=0;while(n>=1024&&i<u.length-1){n/=1024;i++}return (i?n.toFixed(1):n)+' '+u[i]}
+function ago(iso){if(!iso)return '—';const s=(Date.now()-Date.parse(iso))/1000;if(isNaN(s))return '—';if(s<60)return Math.round(s)+'s ago';if(s<3600)return Math.round(s/60)+'m ago';if(s<86400)return Math.round(s/3600)+'h ago';return Math.round(s/86400)+'d ago'}
+function toast(t,m,cls=''){const el=document.createElement('div');el.className='toast '+cls;el.innerHTML=`<div class="t">${esc(t)}</div>${m?`<div class="m">${esc(m)}</div>`:''}`;$('#toasts').append(el);setTimeout(()=>{el.style.opacity=0;el.style.transition='.3s';setTimeout(()=>el.remove(),300)},3800)}
+async function req(base,path,opts={},withKey){
+  const h=Object.assign({},opts.headers||{});
+  if(opts.body&&!(opts.body instanceof FormData))h['Content-Type']='application/json';
+  if(withKey&&apiKey())h['X-API-Key']=apiKey();
+  const r=await fetch(base+path,Object.assign({},opts,{headers:h}));
+  if(r.status===401)throw new Error('Unauthorized — check the API key');
+  const txt=await r.text();let data=null;try{data=txt?JSON.parse(txt):null}catch{data=txt}
+  if(!r.ok)throw new Error((data&&(data.error||data.message))||('HTTP '+r.status));
+  return data;
+}
+const api =(p,o)=>req('/api/v1',p,o,true);          // admin (server side)
+const capi=(p,o)=>req('/client/api/v1',p,o,false);   // transfer (client side, nested)
+const badge=s=>{const m={RUNNING:'ok',COMPLETED:'ok',UP:'ok',STOPPED:'mut',STARTING:'warn',STOPPING:'warn',IN_PROGRESS:'info',INITIATED:'info',PENDING:'info',PAUSED:'warn',INTERRUPTED:'warn',FAILED:'err',CANCELLED:'err',ERROR:'err'};return `<span class="pill ${m[s]||'mut'}">${esc(s||'—')}</span>`};
+const dirpill=d=>`<span class="pill ${d==='RECEIVE'?'info':d==='SEND'?'mut':'warn'}">${esc(d||'—')}</span>`;
+
+async function health(){try{const h=await (await fetch('/actuator/health')).json();$('#healthDot').className='dot up';$('#healthTxt').textContent='Node online';return h.status}catch{$('#healthDot').className='dot down';$('#healthTxt').textContent='Node offline'}}
+
+const TABS={
+  dashboard:{title:'Dashboard',sub:'Node overview — inbound & outbound',auto:5000,render:renderDashboard},
+  listeners:{title:'Listeners',sub:'Inbound PeSIT E TCP/TLS listeners',auto:4000,render:renderListeners},
+  partners:{title:'Partners',sub:'Remote parties allowed to connect',render:renderPartners},
+  files:{title:'Virtual files',sub:'Logical files exposed to partners',render:renderFiles},
+  remotes:{title:'Remote servers',sub:'Servers this node connects out to',render:renderRemotes},
+  send:{title:'Send / Receive',sub:'Initiate an outgoing transfer or message',auto:3000,render:renderSend},
+  transfers:{title:'Transfers',sub:'Inbound and outbound records',auto:2500,render:renderTransfers},
+};
+function go(tab){state.tab=tab;$$('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));$('#title').textContent=TABS[tab].title;$('#subtitle').textContent=TABS[tab].sub;clearInterval(state.timer);draw();if(TABS[tab].auto)state.timer=setInterval(()=>TABS[tab].render(true),TABS[tab].auto)}
+async function draw(){try{await TABS[state.tab].render()}catch(e){$('#view').innerHTML=errBox(e)}}
+const errBox=e=>`<div class="panel"><div class="empty"><div class="big">⚠</div>${esc(e.message||e)}</div></div>`;
+const emptyRow=(n,msg)=>`<tr><td colspan="${n}"><div class="empty"><div class="big">∅</div>${esc(msg)}</div></td></tr>`;
+function formObj(f){const o={};new FormData(f).forEach((v,k)=>o[k]=v);$$('input[type=checkbox]',f).forEach(c=>o[c.name]=c.checked);Object.keys(o).forEach(k=>{if(o[k]===''||o[k]==null)delete o[k]});return o}
+function progCell(t){const size=t.fileSize;const pct=size?Math.min(100,Math.round(t.bytesTransferred*100/size)):(t.status==='COMPLETED'?100:0);return `<div class="prog"><i style="width:${pct}%"></i></div><span class="muted mono" style="font-size:11px">${bytes(t.bytesTransferred)}${t.lastSyncPoint?' · sync '+t.lastSyncPoint:''}</span>`}
+
+async function renderDashboard(){
+  const [servers,partners,files,remotes,sin,sout]=await Promise.all([api('/servers'),api('/config/partners'),api('/config/files'),capi('/servers'),api('/transfers/stats'),capi('/transfers/stats')]);
+  const running=servers.filter(s=>s.status==='RUNNING').length;
+  const inrec=await api('/transfers?limit=6'),outrec=await capi('/transfers?limit=6');
+  const recent=[...inrec.map(t=>({d:'IN',...t})),...outrec.map(t=>({d:'OUT',id:t.id,...t}))].sort((a,b)=>Date.parse(b.startedAt||b.createdAt||0)-Date.parse(a.startedAt||a.createdAt||0)).slice(0,8);
+  $('#view').innerHTML=`
+   <div class="cards">
+     <div class="stat ok"><div class="n">${running}/${servers.length}</div><div class="l">Listeners up</div></div>
+     <div class="stat info"><div class="n">${(sin.inProgress||0)+(sout.inProgress||0)}</div><div class="l">In progress</div></div>
+     <div class="stat"><div class="n">${(sin.completed||0)+(sout.completed||0)}</div><div class="l">Completed</div></div>
+     <div class="stat ${(sin.failed||0)+(sout.failed||0)?'err':''}"><div class="n">${(sin.failed||0)+(sout.failed||0)}</div><div class="l">Failed</div></div>
+     <div class="stat"><div class="n">${bytes((sin.bytesTransferred||0)+(sout.bytesTransferred||0))}</div><div class="l">Transferred</div></div>
+   </div>
+   <div class="panel"><div class="panel-h"><h2>Recent transfers</h2><a href="#" onclick="go('transfers');return false">All →</a></div>
+     <table><thead><tr><th>Way</th><th>Status</th><th>Dir</th><th>Peer</th><th>File</th><th>Progress</th><th>When</th></tr></thead><tbody>
+     ${recent.length?recent.map(t=>`<tr><td><span class="pill ${t.d==='IN'?'info':'mut'}">${t.d}</span></td><td>${badge(t.status)}</td><td>${dirpill(t.direction)}</td>
+       <td class="mono">${esc(t.partnerId||t.serverName||'—')}</td><td class="mono">${esc(t.filename||t.remoteFilename||t.localFilename||'—')}</td>
+       <td style="min-width:110px">${progCell(t)}</td><td class="muted nowrap">${ago(t.startedAt||t.createdAt)}</td></tr>`).join(''):emptyRow(7,'No transfers yet')}
+     </tbody></table></div>
+   <div class="cards">
+     <div class="stat"><div class="n">${partners.length}</div><div class="l">Partners</div></div>
+     <div class="stat"><div class="n">${files.length}</div><div class="l">Virtual files</div></div>
+     <div class="stat"><div class="n">${remotes.length}</div><div class="l">Remote servers</div></div>
+   </div>`;
+}
+
+async function renderListeners(quiet){
+  const servers=await api('/servers');
+  const rows=servers.length?servers.map(s=>`<tr>
+     <td class="mono">${esc(s.serverId)}</td><td class="mono">${esc(s.bindAddress)}:${s.port}</td><td>${badge(s.status)}</td>
+     <td>${s.sslEnabled?'<span class="pill ok">TLS</span>':'<span class="pill mut">plain</span>'}</td>
+     <td class="mono">${s.syncPointsEnabled?s.syncIntervalKb+' KB / w'+s.syncWindow:'off'}</td>
+     <td class="nowrap row">${s.status==='RUNNING'?`<button class="btn sm danger" onclick="ctl('${esc(s.serverId)}','stop')">■ Stop</button>`:`<button class="btn sm primary" onclick="ctl('${esc(s.serverId)}','start')">▶ Start</button>`}
+       <button class="btn sm danger" onclick="delSrv('${esc(s.serverId)}')">✕</button></td></tr>`).join(''):emptyRow(6,'No listener yet — create one below');
+  if(quiet&&$('#lisBody')){$('#lisBody').innerHTML=rows;return;}
+  $('#view').innerHTML=`
+   <div class="panel"><div class="panel-h"><h2>Listeners</h2><span class="sub">${servers.length} configured</span></div>
+     <table><thead><tr><th>Server ID</th><th>Bind</th><th>Status</th><th>Transport</th><th>Sync</th><th></th></tr></thead><tbody id="lisBody">${rows}</tbody></table></div>
+   <div class="panel"><div class="panel-h"><h2>New listener</h2></div>
+   <form class="grid" data-t="listener" onsubmit="createSrv(this);return false">
+     <label class="f">Server ID<input name="serverId" required placeholder="PWSERVER"></label>
+     <label class="f">Port<input name="port" type="number" required value="5001"></label>
+     <label class="f">Bind address<input name="bindAddress" value="0.0.0.0"></label>
+     <label class="f">Max entity size<input name="maxEntitySize" type="number" value="32768"></label>
+     <label class="f">Sync interval (KB)<input name="syncIntervalKb" type="number" value="256"></label>
+     <label class="f">Sync window<input name="syncWindow" type="number" value="4"></label>
+     <label class="f">Receive dir<input name="receiveDirectory" value="/data/received"></label>
+     <label class="f">Send dir<input name="sendDirectory" value="/data/send"></label>
+     <label class="f chk"><input type="checkbox" name="sslEnabled">TLS</label>
+     <label class="f chk"><input type="checkbox" name="autoStart" checked>Auto-start</label>
+     <div class="form-foot"><button class="btn primary" type="submit">Create listener</button></div>
+   </form></div>`;
+}
+async function ctl(id,act){try{await api(`/servers/${encodeURIComponent(id)}/${act}`,{method:'POST'});toast('Listener '+act+'ed',id,'ok');renderListeners()}catch(e){toast('Action failed',e.message,'err')}}
+async function delSrv(id){if(!confirm('Delete listener '+id+'?'))return;try{await api('/servers/'+encodeURIComponent(id),{method:'DELETE'});toast('Listener deleted',id,'ok');renderListeners()}catch(e){toast('Delete failed',e.message,'err')}}
+async function createSrv(f){const d=formObj(f);d.port=+d.port;['maxEntitySize','syncIntervalKb','syncWindow'].forEach(k=>d[k]=+d[k]);d.syncPointsEnabled=true;
+  try{await api('/servers',{method:'POST',body:JSON.stringify(d)});toast('Listener created',d.serverId,'ok');renderListeners()}catch(e){toast('Create failed',e.message,'err')}return false}
+
+async function renderPartners(){
+  const ps=await api('/config/partners');
+  $('#view').innerHTML=`
+   <div class="panel"><div class="panel-h"><h2>Partners</h2><span class="sub">${ps.length} configured</span></div>
+     <table><thead><tr><th>ID</th><th>Access</th><th>Password</th><th>Max conn.</th><th>Description</th><th></th></tr></thead><tbody>
+     ${ps.length?ps.map(p=>`<tr><td class="mono">${esc(p.id)}</td><td><span class="pill ${p.accessType==='BOTH'?'info':'mut'}">${esc(p.accessType)}</span></td>
+       <td>${p.password?'<span class="pill mut">set</span>':'<span class="muted">none</span>'}</td><td class="mono">${p.maxConnections}</td>
+       <td class="muted">${esc(p.description||'')}</td><td><button class="btn sm danger" onclick="delEnt('partners','${esc(p.id)}',renderPartners)">✕</button></td></tr>`).join(''):emptyRow(6,'No partner yet')}
+     </tbody></table></div>
+   <div class="panel"><div class="panel-h"><h2>New partner</h2></div>
+   <form class="grid" data-t="partner" onsubmit="createPartner(this);return false">
+     <label class="f">ID<input name="id" required placeholder="PWSRV01"></label>
+     <label class="f">Description<input name="description"></label>
+     <label class="f">Password<input name="password" placeholder="(optional)"></label>
+     <label class="f">Access type<select name="accessType"><option>BOTH</option><option>READ</option><option>WRITE</option></select></label>
+     <label class="f">Max connections<input name="maxConnections" type="number" value="10"></label>
+     <label class="f">Allowed files<input name="allowedFiles" placeholder="* or A*,B*"></label>
+     <div class="form-foot"><button class="btn primary" type="submit">Create partner</button></div>
+   </form></div>`;
+}
+async function createPartner(f){const d=formObj(f);d.maxConnections=+d.maxConnections;d.enabled=true;try{await api('/config/partners',{method:'POST',body:JSON.stringify(d)});toast('Partner created',d.id,'ok');renderPartners()}catch(e){toast('Create failed',e.message,'err')}return false}
+
+async function renderFiles(){
+  const fs=await api('/config/files');
+  $('#view').innerHTML=`
+   <div class="panel"><div class="panel-h"><h2>Virtual files</h2><span class="sub">${fs.length} configured</span></div>
+     <table><thead><tr><th>ID</th><th>Direction</th><th>Format</th><th>LREC</th><th>Path / pattern</th><th></th></tr></thead><tbody>
+     ${fs.length?fs.map(f=>`<tr><td class="mono">${esc(f.id)}</td><td>${dirpill(f.direction)}</td>
+       <td class="mono">${(f.recordFormat&128)?'variable':'fixed'}${f.text?' · text':''}</td><td class="mono">${f.recordLength}</td>
+       <td class="mono muted">${esc(f.direction==='SEND'?(f.sendFile||''):(f.receiveDirectory||'')+'/'+(f.receiveFilenamePattern||''))}</td>
+       <td><button class="btn sm danger" onclick="delEnt('files','${esc(f.id)}',renderFiles)">✕</button></td></tr>`).join(''):emptyRow(6,'No virtual file yet')}
+     </tbody></table></div>
+   <div class="panel"><div class="panel-h"><h2>New virtual file</h2></div>
+   <form class="grid" data-t="file" onsubmit="createFile(this);return false">
+     <label class="f">ID<input name="id" required placeholder="PWSEND"></label>
+     <label class="f">Direction<select name="direction"><option>RECEIVE</option><option>SEND</option><option>BOTH</option></select></label>
+     <label class="f">Record length<input name="recordLength" type="number" value="4096"></label>
+     <label class="f">Record format<select name="recordFormat"><option value="128">Variable (BU)</option><option value="0">Fixed (BF)</option></select></label>
+     <label class="f">Receive dir<input name="receiveDirectory" value="/data/received"></label>
+     <label class="f">Receive pattern<input name="receiveFilenamePattern" value="${'${virtualFile}_${timestamp}'}"></label>
+     <label class="f">Send file<input name="sendFile" placeholder="/data/send/PWRECV"></label>
+     <label class="f chk"><input type="checkbox" name="text">Text mode</label>
+     <label class="f chk"><input type="checkbox" name="overwrite">Overwrite</label>
+     <div class="form-foot"><button class="btn primary" type="submit">Create virtual file</button></div>
+   </form></div>`;
+}
+async function createFile(f){const d=formObj(f);d.recordLength=+d.recordLength;d.recordFormat=+d.recordFormat;d.enabled=true;try{await api('/config/files',{method:'POST',body:JSON.stringify(d)});toast('Virtual file created',d.id,'ok');renderFiles()}catch(e){toast('Create failed',e.message,'err')}return false}
+
+async function renderRemotes(){
+  const rs=await capi('/servers');
+  $('#view').innerHTML=`
+   <div class="panel"><div class="panel-h"><h2>Remote servers</h2><span class="sub">${rs.length} configured</span></div>
+     <table><thead><tr><th>Name</th><th>Address</th><th>Server ID</th><th>Transport</th><th>Default</th><th></th></tr></thead><tbody>
+     ${rs.length?rs.map(s=>`<tr><td class="mono">${esc(s.name)}</td><td class="mono">${esc(s.host)}:${s.port}</td><td class="mono">${esc(s.serverId)}</td>
+       <td>${s.tlsEnabled?'<span class="pill ok">TLS</span>':'<span class="pill mut">plain</span>'}${s.tcpipHeader?'':' <span class="pill mut">no-hdr</span>'}</td>
+       <td>${s.defaultServer?'<span class="pill info">default</span>':`<button class="btn sm" onclick="setDefault('${esc(s.id)}')">set</button>`}</td>
+       <td class="nowrap row"><button class="btn sm" onclick="testRemote('${esc(s.id)}')">Test</button>
+         <button class="btn sm" onclick="uploadCA('${esc(s.id)}')">CA</button>
+         <button class="btn sm danger" onclick="delRemote('${esc(s.id)}')">✕</button></td></tr>`).join(''):emptyRow(6,'No remote server yet')}
+     </tbody></table></div>
+   <div class="panel"><div class="panel-h"><h2>New remote server</h2></div>
+   <form class="grid" data-t="remote" onsubmit="createRemote(this);return false">
+     <label class="f">Name<input name="name" required placeholder="cx-server"></label>
+     <label class="f">Host<input name="host" required placeholder="cx-server"></label>
+     <label class="f">Port<input name="port" type="number" required value="5000"></label>
+     <label class="f">Server ID (PI 4)<input name="serverId" placeholder="CETOM1"></label>
+     <label class="f chk"><input type="checkbox" name="tlsEnabled">TLS</label>
+     <label class="f chk"><input type="checkbox" name="tcpipHeader" checked>Transport header</label>
+     <label class="f chk"><input type="checkbox" name="crcEnabled">CRC option</label>
+     <label class="f chk"><input type="checkbox" name="defaultServer">Default</label>
+     <div class="form-foot"><button class="btn primary" type="submit">Create remote server</button></div>
+   </form></div>`;
+}
+async function createRemote(f){const d=formObj(f);d.port=+d.port;d.enabled=true;try{await capi('/servers',{method:'POST',body:JSON.stringify(d)});toast('Remote server created',d.name,'ok');renderRemotes()}catch(e){toast('Create failed',e.message,'err')}return false}
+async function delRemote(id){if(!confirm('Delete remote server?'))return;try{await capi('/servers/'+encodeURIComponent(id),{method:'DELETE'});toast('Deleted','','ok');renderRemotes()}catch(e){toast('Delete failed',e.message,'err')}}
+async function setDefault(id){try{await capi('/servers/'+encodeURIComponent(id)+'/default',{method:'POST'});toast('Default set','','ok');renderRemotes()}catch(e){toast('Failed',e.message,'err')}}
+async function testRemote(id){toast('Testing…','');try{const r=await capi('/servers/'+encodeURIComponent(id)+'/test',{method:'POST'});toast(r.success?'Reachable':'Unreachable',r.message,r.success?'ok':'err')}catch(e){toast('Test failed',e.message,'err')}}
+let _caTarget=null;
+function uploadCA(id){_caTarget=id;$('#fileup').accept='.pem,.crt,.cer';$('#fileup').click()}
+$('#fileup').addEventListener('change',async e=>{const f=e.target.files[0];if(!f||!_caTarget)return;const fd=new FormData();fd.append('file',f);fd.append('password','');
+  try{const r=await capi('/servers/'+encodeURIComponent(_caTarget)+'/tls/truststore',{method:'POST',body:fd});toast(r.success?'CA uploaded':'Upload rejected',r.message||r.error,r.success?'ok':'err');renderRemotes()}catch(e){toast('Upload failed',e.message,'err')}
+  e.target.value='';_caTarget=null});
+
+async function renderSend(quiet){
+  if(!quiet||!$('#sendForm')){
+    const rs=await capi('/servers');
+    const opts=rs.map(s=>`<option value="${esc(s.name)}"${s.defaultServer?' selected':''}>${esc(s.name)} (${esc(s.host)}:${s.port})</option>`).join('');
+    $('#view').innerHTML=`
+     <div class="panel"><div class="panel-h"><h2>New transfer</h2></div>
+     <form id="sendForm" class="grid" onsubmit="doTransfer(this);return false">
+       <label class="f">Action<select name="_mode" onchange="modeChange(this)"><option value="send">Send file</option><option value="receive">Receive file</option><option value="message">Message</option></select></label>
+       <label class="f">Server<select name="server" required>${opts||'<option value="">— no remote server —</option>'}</select></label>
+       <label class="f">Partner ID (PI 3)<input name="partnerId" placeholder="PWSRV01"></label>
+       <label class="f">Password<input name="password" placeholder="(optional)"></label>
+       <label class="f _file">Local file<input name="filename" placeholder="/data/send/file.dat"></label>
+       <label class="f _file">Virtual file (PI 12)<input name="remoteFilename" placeholder="PWRECV"></label>
+       <label class="f _msg hide">Message<input name="message" placeholder="hello"></label>
+       <label class="f chk _opt"><input type="checkbox" name="syncPointsEnabled" checked>Sync points</label>
+       <label class="f chk _opt _send"><input type="checkbox" name="compressionEnabled">Compress</label>
+       <label class="f chk _opt _send"><input type="checkbox" name="text">Text mode</label>
+       <label class="f chk _msg hide"><input type="checkbox" name="expectsReply">Expect reply</label>
+       <div class="form-foot"><button class="btn primary" type="submit" id="sendBtn">Start transfer</button></div>
+     </form></div>
+     <div class="panel"><div class="panel-h"><h2>Outbound transfers</h2><span class="sub">live</span></div>
+       <table><thead><tr><th>Status</th><th>Dir</th><th>Server</th><th>File</th><th>Progress</th><th>Started</th><th></th></tr></thead>
+       <tbody id="outBody"></tbody></table></div>`;
+  }
+  const ts=await capi('/transfers?limit=60');
+  $('#outBody').innerHTML=ts.length?ts.map(t=>`<tr><td>${badge(t.status)}</td><td>${dirpill(t.direction)}</td><td class="mono">${esc(t.serverName||'—')}</td>
+     <td class="mono">${esc(t.remoteFilename||t.localFilename||'—')}</td><td style="min-width:110px">${progCell(t)}</td><td class="muted nowrap">${ago(t.startedAt||t.createdAt)}</td>
+     <td class="nowrap">${['IN_PROGRESS','PENDING'].includes(t.status)?`<button class="btn sm danger" onclick="cancelOut('${esc(t.id)}')">Cancel</button>`:(['FAILED','INTERRUPTED','CANCELLED'].includes(t.status)?`<button class="btn sm" onclick="retryOut('${esc(t.id)}')">Retry</button>`:'')}</td></tr>`).join(''):emptyRow(7,'No outbound transfer yet');
+}
+function modeChange(sel){const m=sel.value;$$('._file').forEach(e=>e.classList.toggle('hide',m==='message'));$$('._msg').forEach(e=>e.classList.toggle('hide',m!=='message'));$$('._send').forEach(e=>e.classList.toggle('hide',m!=='send'));$$('._opt').forEach(e=>e.classList.toggle('hide',m==='message'&&!e.classList.contains('_msg')));$('#sendBtn').textContent=m==='message'?'Send message':m==='receive'?'Start receive':'Start transfer'}
+async function doTransfer(f){const d=formObj(f);const mode=d._mode;delete d._mode;
+  try{if(mode==='message'){const r=await capi('/transfers/message',{method:'POST',body:JSON.stringify(d)});toast('Message '+(r.status||''),r.reply?('reply: '+r.reply):r.errorMessage,r.status==='COMPLETED'?'ok':'err')}
+    else{const r=await capi('/transfers/'+mode,{method:'POST',body:JSON.stringify(d)});toast('Transfer queued',(r.transferId||'').slice(0,8),'ok')}
+    renderSend(true)}catch(e){toast('Failed',e.message,'err')}return false}
+async function cancelOut(id){try{await capi('/transfers/'+encodeURIComponent(id)+'/cancel',{method:'POST'});toast('Cancellation requested','','ok');renderSend(true)}catch(e){toast('Cancel failed',e.message,'err')}}
+async function retryOut(id){try{await capi('/transfers/'+encodeURIComponent(id)+'/retry',{method:'POST'});toast('Retry queued','','ok');renderSend(true)}catch(e){toast('Retry failed',e.message,'err')}}
+
+async function renderTransfers(quiet){
+  const v=state.tview;
+  const ts=v==='in'?await api('/transfers?limit=100'):await capi('/transfers?limit=100');
+  const rows=ts.length?ts.map(t=>{const id=t.transferId||t.id;return `<tr><td class="mono">${esc((id||'').slice(0,8))}</td><td>${badge(t.status)}</td><td>${dirpill(t.direction)}</td>
+     <td class="mono">${esc(t.partnerId||t.serverName||'—')}</td><td class="mono">${esc(t.filename||t.remoteFilename||t.localFilename||'—')}</td>
+     <td style="min-width:120px">${progCell(t)}</td><td class="muted nowrap">${ago(t.startedAt||t.createdAt||t.updatedAt)}</td>
+     <td class="nowrap">${['IN_PROGRESS','INITIATED','PENDING','PAUSED'].includes(t.status)?`<button class="btn sm danger" onclick="cancelAny('${v}','${esc(id)}')">Cancel</button>`:(t.errorMessage?`<span class="muted" title="${esc(t.errorMessage)}">${esc(t.diagnosticCode||t.errorCode||'error')}</span>`:'')}</td></tr>`}).join(''):emptyRow(8,'No transfers');
+  if(quiet&&$('#txBody')){$('#txBody').innerHTML=rows;return;}
+  $('#view').innerHTML=`
+   <div class="panel"><div class="panel-h"><h2>Transfers</h2>
+     <div class="row"><button class="btn sm ${v==='in'?'primary':''}" onclick="tview('in')">Inbound</button><button class="btn sm ${v==='out'?'primary':''}" onclick="tview('out')">Outbound</button></div></div>
+     <table><thead><tr><th>ID</th><th>Status</th><th>Dir</th><th>Peer</th><th>File</th><th>Progress</th><th>Started</th><th></th></tr></thead><tbody id="txBody">${rows}</tbody></table></div>`;
+}
+function tview(v){state.tview=v;renderTransfers()}
+async function cancelAny(v,id){try{await (v==='in'?api:capi)('/transfers/'+encodeURIComponent(id)+'/cancel',{method:'POST'});toast('Cancellation requested','','ok');renderTransfers()}catch(e){toast('Cancel failed',e.message,'err')}}
+async function delEnt(kind,id,cb){if(!confirm('Delete '+id+'?'))return;try{await api('/config/'+kind+'/'+encodeURIComponent(id),{method:'DELETE'});toast('Deleted',id,'ok');cb()}catch(e){toast('Delete failed',e.message,'err')}}
+
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b)go(b.dataset.tab)});
+$('#refreshBtn').onclick=draw;
+$('#apiKey').value=apiKey();
+$('#apiKey').addEventListener('change',e=>{localStorage.setItem(KEY_LS,e.target.value.trim());toast('API key saved','','ok');draw()});
+function applyTheme(t){document.documentElement.dataset.theme=t;localStorage.setItem(THEME_LS,t)}
+$('#themeToggle').onclick=e=>{e.preventDefault();const cur=localStorage.getItem(THEME_LS)||'auto';applyTheme(cur==='dark'?'light':cur==='light'?'auto':'dark');toast('Theme: '+localStorage.getItem(THEME_LS),'','')};
+applyTheme(localStorage.getItem(THEME_LS)||'auto');
+health();setInterval(health,8000);go('dashboard');
+</script>
+</body>
+</html>

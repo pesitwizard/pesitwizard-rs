@@ -1,0 +1,82 @@
+# Connect:Express integration tests for the unified Rust PeSIT Wizard node.
+# A single `pw-node` process serves both API surfaces (admin 8080, transfer 9081) and is
+# network-aliased as both `pw-server` and `pw-client`, so the shared test scripts run unchanged.
+# The Connect:Express image and the test scripts are shared with the Java project.
+services:
+  pw-node:
+    build:
+      context: ./pw-node
+    container_name: pw-node
+    environment:
+      - PESIT_API_KEY=integration-test-key
+    ports:
+      - "${PW_SERVER_PESIT_PORT:-5001}:5001"
+      - "${PW_SERVER_API_PORT:-8080}:8080"
+      - "${PW_CLIENT_API_PORT:-9081}:9081"
+    volumes:
+      - pw-received:/data/received
+      - pw-client-send:/data/send
+    networks:
+      pesit-network:
+        aliases: [pw-server, pw-client]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health && curl -sf http://localhost:9081/actuator/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 5s
+
+  cx-server:
+    build:
+      context: ${CX_DOCKER_DIR:-../../../pesitwizard/integration-tests/cx-integration/docker/cx}
+    container_name: cx-server
+    environment:
+      - RUN_TRANSFER_TESTS=true
+    ports:
+      - "${CX_SERVER_PORT:-5000}:5000"
+    volumes:
+      - cx-send:/tmp/cx-send
+      - cx-received:/tmp/cx-received
+    networks:
+      - pesit-network
+    depends_on:
+      pw-node:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -tuln | grep -q ':5000 ' || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  test-runner:
+    image: ubuntu:22.04
+    container_name: test-runner
+    volumes:
+      - cx-send:/tmp/cx-send
+      - cx-received:/tmp/cx-received
+      - pw-received:/tmp/pw-received
+      - pw-client-send:/tmp/pw-client-send
+      - pw-client-send:/tmp/pw-send
+      - pw-client-received:/tmp/pw-client-received
+      - ${CX_TESTS_DIR:-../../../pesitwizard/integration-tests/cx-integration/docker/tests}:/tests
+      - ./tests:/tests-rs:ro
+    networks:
+      - pesit-network
+    depends_on:
+      pw-node:
+        condition: service_healthy
+      cx-server:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "${TEST_SCRIPT:-/tests/run-tests.sh}"]
+
+networks:
+  pesit-network:
+    driver: bridge
+
+volumes:
+  pw-received:
+  cx-send:
+  cx-received:
+  pw-client-send:
+  pw-client-received:
