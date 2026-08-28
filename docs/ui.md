@@ -21,6 +21,7 @@ bottom of the sidebar.
 | **Send / Receive** | Initiate an outgoing transfer (send / receive) or a message: pick a remote server, partner id, file names, sync / compression / text options; a live table of outbound transfers with cancel / retry. |
 | **Certificates** | Keystores, truststores, the local CA and the Vault PKI backend — see [certificates.md](certificates.md). |
 | **Transfers** | Inbound and outbound transfer records (toggle), with live status, progress, and cancel. |
+| **Cluster** | NATS / JetStream cluster membership and the elected leader (empty when the node runs standalone). |
 | **System** | The append-only audit log (config changes, listener start/stop, certificate / Vault operations, transfer outcomes) and configuration backup / restore (download a JSON bundle, restore it back). |
 
 Tables on the live tabs auto-refresh without disturbing a form you are filling in (only the table

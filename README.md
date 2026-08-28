@@ -14,6 +14,7 @@ Fully open source — there is no separate commercial edition.
 | `pesit-app` | Shared plumbing (SQLite JSON store, REST helpers) |
 | `pesit-client` | Library: the outbound transfer engine, its REST API and DTOs |
 | `pesit-pki` | Certificate & CA management: X.509 inspection, a local CA (`rcgen`) and a native HashiCorp Vault PKI backend |
+| `pesit-cluster` | Clustering over NATS / JetStream: membership, leader election and configuration replication |
 | `pesit-node` | The `pesitwizard` binary: listeners + outbound engine + REST APIs + web UI, sharing one store |
 
 ## Build & verify
@@ -82,5 +83,6 @@ multipart `file`); PKCS#12 stores are not supported — convert them with `opens
 * [docs/protocol-reference.md](docs/protocol-reference.md) — PeSIT E reference from the specification
 * [docs/ui.md](docs/ui.md) — the web UI
 * [docs/certificates.md](docs/certificates.md) — certificate / CA management and the native Vault PKI backend
+* [docs/clustering.md](docs/clustering.md) — NATS / JetStream clustering
 * [docs/gap-analysis.md](docs/gap-analysis.md) — gaps of the Java implementation and how this addresses them
 * [ROADMAP.md](ROADMAP.md) — planned capabilities (certificate/CA + Vault, audit, backup/restore, clustering)

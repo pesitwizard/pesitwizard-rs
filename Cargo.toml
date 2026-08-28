@@ -7,6 +7,7 @@ members = [
     "crates/pesit-node",
     "crates/pesit-client",
     "crates/pesit-pki",
+    "crates/pesit-cluster",
 ]
 
 [workspace.package]
@@ -23,6 +24,7 @@ pesit-io = { path = "crates/pesit-io" }
 pesit-app = { path = "crates/pesit-app" }
 pesit-client = { path = "crates/pesit-client" }
 pesit-pki = { path = "crates/pesit-pki" }
+pesit-cluster = { path = "crates/pesit-cluster" }
 sha2 = "0.10"
 hex = "0.4"
 anyhow = "1"
@@ -52,6 +54,8 @@ x509-parser = { version = "0.16", features = ["verify"] }
 pem = "3"
 time = { version = "0.3", features = ["formatting"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+async-nats = "0.46"
+futures = "0.3"
 tempfile = "3"
 proptest = "1"
 

@@ -31,6 +31,8 @@ pub struct App {
     pub pki: Option<std::sync::Arc<crate::pki::PkiState>>,
     /// Audit log.
     pub audit: std::sync::Arc<pesit_app::audit::AuditLog>,
+    /// Cluster membership (None = standalone).
+    pub cluster: Option<std::sync::Arc<pesit_cluster::Cluster>>,
 }
 
 type AppState = State<Arc<App>>;
@@ -113,6 +115,7 @@ pub fn router(app: Arc<App>) -> Router {
         )
         .merge(crate::pki::routes())
         .merge(crate::audit::routes())
+        .merge(crate::cluster::routes())
         .merge(crate::backup::routes())
         .layer(middleware::from_fn(move |req, next| {
             require_api_key(key.clone(), req, next)
@@ -197,6 +200,14 @@ async fn create<T: Entity>(
     }
     body.touch(true);
     app.store.put(T::TABLE, body.id(), &body)?;
+    crate::cluster::publish(
+        &app,
+        "put",
+        T::TABLE,
+        body.id(),
+        serde_json::to_value(&body).ok(),
+    )
+    .await;
     app.audit
         .success("config", "create", format!("{}:{}", T::NAME, body.id()));
     tracing::info!("{} '{}' created", T::NAME, body.id());
@@ -216,11 +227,13 @@ async fn update<T: Entity>(
     body.touch(false);
     drop(existing);
     app.store.put(T::TABLE, &id, &body)?;
+    crate::cluster::publish(&app, "put", T::TABLE, &id, serde_json::to_value(&body).ok()).await;
     Ok(Json(body))
 }
 
 async fn delete<T: Entity>(State(app): AppState, Path(id): Path<String>) -> ApiResult<StatusCode> {
     if app.store.delete(T::TABLE, &id)? {
+        crate::cluster::publish(&app, "delete", T::TABLE, &id, None).await;
         app.audit
             .success("config", "delete", format!("{}:{id}", T::NAME));
         Ok(StatusCode::NO_CONTENT)

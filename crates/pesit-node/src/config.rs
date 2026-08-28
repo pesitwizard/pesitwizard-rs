@@ -98,9 +98,20 @@ pub struct NodeOptions {
     /// YAML bootstrap file (partners / files / remotePartners / servers).
     #[arg(long, env = "PESIT_CONFIG", global = true)]
     pub config: Option<PathBuf>,
-    /// Node identifier reported in transfer records.
+    /// Node identifier reported in transfer records and cluster membership.
     #[arg(long, env = "PESIT_NODE_ID", default_value = "node-1", global = true)]
     pub node_id: String,
+    /// NATS URL to join a cluster (e.g. nats://nats:4222); unset = standalone.
+    #[arg(long, env = "PESIT_CLUSTER_NATS", global = true)]
+    pub cluster_nats: Option<String>,
+    /// Cluster name (namespaces NATS buckets and subjects).
+    #[arg(
+        long,
+        env = "PESIT_CLUSTER_NAME",
+        default_value = "default",
+        global = true
+    )]
+    pub cluster_name: String,
     /// Default synchronisation interval (KB) for outbound transfers.
     #[arg(
         long,

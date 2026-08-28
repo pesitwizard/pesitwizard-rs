@@ -117,6 +117,7 @@ label.chk input{width:16px;height:16px;accent-color:var(--accent)}
       <button data-tab="send"><span class="ic">⇑</span>Send / Receive</button>
       <button data-tab="certs"><span class="ic">❖</span>Certificates</button>
       <button data-tab="transfers"><span class="ic">⇅</span>Transfers</button>
+      <button data-tab="cluster"><span class="ic">⧉</span>Cluster</button>
       <button data-tab="system"><span class="ic">⚙</span>System</button>
     </nav>
     <div class="side-foot">
@@ -172,6 +173,7 @@ const TABS={
   send:{title:'Send / Receive',sub:'Initiate an outgoing transfer or message',auto:3000,render:renderSend},
   certs:{title:'Certificates',sub:'Keystores, truststores, local CA and Vault PKI',render:renderCerts},
   transfers:{title:'Transfers',sub:'Inbound and outbound records',auto:2500,render:renderTransfers},
+  cluster:{title:'Cluster',sub:'NATS / JetStream membership and leader',auto:4000,render:renderCluster},
   system:{title:'System',sub:'Audit log and configuration backup / restore',auto:6000,render:renderSystem},
 };
 function go(tab){state.tab=tab;$$('#nav button').forEach(b=>b.classList.toggle('on',b.dataset.tab===tab));$('#title').textContent=TABS[tab].title;$('#subtitle').textContent=TABS[tab].sub;clearInterval(state.timer);draw();if(TABS[tab].auto)state.timer=setInterval(()=>TABS[tab].render(true),TABS[tab].auto)}
@@ -256,6 +258,21 @@ async function saveVault(f){const d=formObj(f);const method=d._auth;delete d._au
   try{const r=await api('/certificates/vault',{method:'PUT',body:JSON.stringify(d)});toast('Vault configured','version '+(r.vaultVersion||'?'),'ok');renderCerts()}catch(e){toast('Vault error',e.message,'err')}}
 async function testVault(){toast('Testing Vault…','');try{const r=await api('/certificates/vault/test',{method:'POST'});toast(r.success?'Vault reachable':'Vault error',r.vaultVersion?('version '+r.vaultVersion):r.message,r.success?'ok':'err')}catch(e){toast('Test failed',e.message,'err')}}
 async function clearVault(){if(!confirm('Remove the Vault configuration?'))return;try{await api('/certificates/vault',{method:'DELETE'});toast('Vault removed','','ok');renderCerts()}catch(e){toast('Failed',e.message,'err')}}
+
+async function renderCluster(quiet){
+  const c=await api('/cluster');
+  if(!c.enabled){$('#view').innerHTML=`<div class="panel"><div class="empty"><div class="big">⧉</div>Standalone node — set <span class="mono">PESIT_CLUSTER_NATS</span> to join a NATS/JetStream cluster.<br>Configuration then replicates across nodes, with membership and leader election.</div></div>`;return;}
+  const rows=(c.members||[]).map(m=>`<tr><td class="mono">${esc(m.nodeId)}${m.nodeId===c.nodeId?' <span class="pill info">this node</span>':''}${m.nodeId===c.leader?' <span class="pill ok">leader</span>':''}</td><td class="mono">${esc(m.addr)}</td><td class="mono muted">${esc(m.version)}</td></tr>`).join('')||emptyRow(3,'No members');
+  if(quiet&&$('#memBody')){$('#memBody').innerHTML=rows;return;}
+  $('#view').innerHTML=`
+   <div class="cards">
+     <div class="stat ok"><div class="n">${(c.members||[]).length}</div><div class="l">Members</div></div>
+     <div class="stat ${c.isLeader?'ok':''}"><div class="n" style="font-size:20px">${esc(c.leader||'—')}</div><div class="l">Leader</div></div>
+     <div class="stat"><div class="n" style="font-size:20px">${esc(c.nodeId)}</div><div class="l">This node ${c.isLeader?'(leader)':''}</div></div>
+   </div>
+   <div class="panel"><div class="panel-h"><h2>Members</h2><span class="sub">live · heartbeats</span></div>
+     <table><thead><tr><th>Node</th><th>Admin address</th><th>Version</th></tr></thead><tbody id="memBody">${rows}</tbody></table></div>`;
+}
 
 async function renderSystem(quiet){
   const [ev,stats]=await Promise.all([api('/audit?limit=200'),api('/audit/stats')]);

@@ -11,6 +11,7 @@
 mod api;
 mod audit;
 mod backup;
+mod cluster;
 mod config;
 mod handler;
 mod manager;
@@ -262,6 +263,25 @@ async fn serve(
     engine: Arc<Engine>,
     audit: Arc<AuditLog>,
 ) -> anyhow::Result<()> {
+    let cluster = if let Some(url) = opts.cluster_nats.clone().filter(|u| !u.is_empty()) {
+        let cfg = pesit_cluster::ClusterConfig {
+            url,
+            name: opts.cluster_name.clone(),
+            node_id: opts.node_id.clone(),
+            node_addr: format!("{}:{}", opts.api_bind, opts.api_port),
+            version: env!("CARGO_PKG_VERSION").to_owned(),
+            heartbeat: std::time::Duration::from_secs(5),
+        };
+        match pesit_cluster::Cluster::join(cfg, cluster::handler(Arc::clone(&store))).await {
+            Ok(c) => Some(c),
+            Err(e) => {
+                tracing::error!("cluster disabled: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
     let tls = opts.listener_tls()?;
     let pki = match pki::PkiState::open(opts.pki_dir.clone(), Arc::clone(&store)) {
         Ok(p) => Some(Arc::new(p)),
@@ -299,6 +319,7 @@ async fn serve(
         api_key,
         pki,
         audit: Arc::clone(&audit),
+        cluster: cluster.clone(),
     });
     let client_app = Arc::new(pesit_client::api::App {
         store: Arc::clone(&store),

@@ -1,0 +1,63 @@
+# Clustering integration: a NATS/JetStream server and three nodes sharing configuration.
+# node-c uses the "late" profile so the test can start it after configuration exists, exercising
+# the snapshot catch-up path.
+services:
+  nats:
+    image: nats:2.10-alpine
+    container_name: nats
+    command: ["-js", "-m", "8222"]
+    networks: [cl-net]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:8222/healthz >/dev/null 2>&1 || exit 1"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 2s
+
+  node-a:
+    build: { context: ../cx/pw-node }
+    container_name: node-a
+    environment: &nodeenv
+      - PESIT_API_KEY=integration-test-key
+      - PESIT_CLUSTER_NATS=nats://nats:4222
+      - PESIT_CLUSTER_NAME=itest
+      - PESIT_NODE_ID=node-a
+    ports: ["8090:8080"]
+    networks: [cl-net]
+    depends_on: { nats: { condition: service_healthy } }
+    healthcheck: &nodehc
+      test: ["CMD-SHELL", "curl -sf http://localhost:8080/actuator/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+      start_period: 2s
+
+  node-b:
+    build: { context: ../cx/pw-node }
+    container_name: node-b
+    environment:
+      - PESIT_API_KEY=integration-test-key
+      - PESIT_CLUSTER_NATS=nats://nats:4222
+      - PESIT_CLUSTER_NAME=itest
+      - PESIT_NODE_ID=node-b
+    ports: ["8091:8080"]
+    networks: [cl-net]
+    depends_on: { nats: { condition: service_healthy } }
+    healthcheck: *nodehc
+
+  node-c:
+    build: { context: ../cx/pw-node }
+    container_name: node-c
+    profiles: ["late"]
+    environment:
+      - PESIT_API_KEY=integration-test-key
+      - PESIT_CLUSTER_NATS=nats://nats:4222
+      - PESIT_CLUSTER_NAME=itest
+      - PESIT_NODE_ID=node-c
+    ports: ["8092:8080"]
+    networks: [cl-net]
+    depends_on: { nats: { condition: service_healthy } }
+    healthcheck: *nodehc
+
+networks:
+  cl-net: { driver: bridge }

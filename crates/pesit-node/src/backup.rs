@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use crate::api::App;
 
 /// Store tables carried in a backup (configuration only — not transfer records).
-const CONFIG_TABLES: [&str; 7] = [
+pub const CONFIG_TABLES: [&str; 7] = [
     "partners",
     "virtual_files",
     "remote_partners",
@@ -26,6 +26,9 @@ const CONFIG_TABLES: [&str; 7] = [
     "pki",
 ];
 
+/// Shared-policy tables replicated live across the cluster (listeners stay node-local).
+pub const CLUSTER_TABLES: [&str; 3] = ["partners", "virtual_files", "remote_partners"];
+
 /// Backup routes (merged into the admin router).
 pub fn routes() -> Router<Arc<App>> {
     Router::new()
@@ -33,9 +36,15 @@ pub fn routes() -> Router<Arc<App>> {
         .route("/api/v1/backup/restore", post(restore))
 }
 
-fn dump(store: &JsonStore) -> Result<Value, ApiError> {
+/// Snapshot every configuration table as a `{table: [rows]}` object.
+pub fn dump(store: &JsonStore) -> Result<Value, ApiError> {
+    dump_only(store, &CONFIG_TABLES)
+}
+
+/// Snapshot a chosen set of tables as a `{table: [rows]}` object.
+pub fn dump_only(store: &JsonStore, which: &[&str]) -> Result<Value, ApiError> {
     let mut tables = serde_json::Map::new();
-    for t in CONFIG_TABLES {
+    for t in which.iter().copied() {
         store.ensure_table(t)?;
         let rows: Vec<Value> = store.list(t)?;
         tables.insert(t.to_owned(), Value::Array(rows));
@@ -69,24 +78,33 @@ struct RestoreBundle {
     pki: Value,
 }
 
-async fn restore(
-    State(app): State<Arc<App>>,
-    Json(bundle): Json<RestoreBundle>,
-) -> Result<Json<Value>, ApiError> {
+/// Apply a `{table: [rows]}` map to the store, returning how many records were written.
+pub fn apply_tables(
+    store: &JsonStore,
+    tables: &serde_json::Map<String, Value>,
+) -> Result<usize, ApiError> {
     let mut restored = 0usize;
-    for (table, rows) in &bundle.tables {
+    for (table, rows) in tables {
         if !CONFIG_TABLES.contains(&table.as_str()) {
             continue;
         }
-        app.store.ensure_table(table)?;
+        store.ensure_table(table)?;
         let Value::Array(items) = rows else { continue };
         for item in items {
             if let Some(key) = backup_key(table, item) {
-                app.store.put(table, &key, item)?;
+                store.put(table, &key, item)?;
                 restored += 1;
             }
         }
     }
+    Ok(restored)
+}
+
+async fn restore(
+    State(app): State<Arc<App>>,
+    Json(bundle): Json<RestoreBundle>,
+) -> Result<Json<Value>, ApiError> {
+    let restored = apply_tables(&app.store, &bundle.tables)?;
     if let Some(p) = &app.pki {
         if !bundle.pki.is_null() {
             p.import_material(&bundle.pki)
@@ -106,7 +124,7 @@ async fn restore(
 }
 
 /// The store key for a row of `table` (id fields differ across tables).
-fn backup_key(table: &str, item: &Value) -> Option<String> {
+pub fn backup_key(table: &str, item: &Value) -> Option<String> {
     let field = match table {
         "servers" => "serverId",
         "pki" => return Some("vault".to_owned()),

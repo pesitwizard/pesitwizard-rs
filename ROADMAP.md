@@ -16,6 +16,7 @@ one binary, as plain features (config-toggled where relevant), and drop the rest
 - Connect:Express interoperability (Docker): transfers both ways, sync points, restart, TLS.
 - **Certificate / CA management with native HashiCorp Vault support** (see below).
 - **Audit log** and **configuration backup / restore** (see below).
+- **Clustering / HA** over NATS + JetStream (see below).
 
 ## Dropped (no value for a never-commercialised product)
 
@@ -49,14 +50,18 @@ Replaces the enterprise `pki` + admin CA/certificate features. See
   and certificate material) as a JSON bundle and import it back — `/api/v1/backup` and the System
   web UI tab. ✔ (bundle signing / a CLI subcommand: later.)
 
-### 4. Clustering / HA — via NATS + JetStream
+### 4. Clustering / HA — via NATS + JetStream — *done (v1)*
 
-Replaces the enterprise JGroups cluster module with a Rust-native design (`async-nats`).
+Replaces the enterprise JGroups cluster module with a Rust-native design (`async-nats`), in the
+`pesit-cluster` crate.
 
-- Shared configuration propagation through a JetStream KV bucket.
-- Transfer-record replication and cluster-wide history via JetStream streams.
-- Leader election / work distribution and failover for listeners and scheduled transfers.
-- Node membership and health via NATS.
+- Node membership via a JetStream KV bucket with a TTL heartbeat; `/api/v1/cluster` and a **Cluster**
+  web UI tab. ✔
+- Leader election via a KV lease (create-to-acquire, renew, TTL failover). ✔
+- Shared-policy configuration (partners, virtual files, remote partners) replicated live over NATS;
+  a joining node catches up by requesting a full snapshot from a peer. ✔
+- Later: transfer-record replication / cluster-wide history, and work distribution for scheduled
+  transfers driven by the leader.
 
 ## Related
 

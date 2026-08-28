@@ -1,0 +1,21 @@
+[package]
+name = "pesit-cluster"
+description = "Clustering for PeSIT Wizard over NATS / JetStream: node membership, leader election and configuration propagation"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+async-nats.workspace = true
+futures.workspace = true
+bytes.workspace = true
+
+[lints]
+workspace = true

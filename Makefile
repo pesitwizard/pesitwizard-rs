@@ -35,3 +35,6 @@ ui-test: build
 
 vault-test: release
 	bash integration/vault/build-and-test.sh
+
+cluster-test: release
+	bash integration/cluster/build-and-test.sh
