@@ -413,6 +413,15 @@ async fn serve(
             );
         }
     }
+    #[cfg(unix)]
+    if let Some(config_path) = opts.config.clone() {
+        reload_task(
+            config_path,
+            Arc::clone(&store),
+            Arc::clone(&manager),
+            Arc::clone(&audit),
+        );
+    }
 
     let api_key = if opts.security_enabled {
         opts.api_key
@@ -539,6 +548,40 @@ async fn wait_and_report(engine: &Engine, id: &str) -> anyhow::Result<()> {
 }
 
 /// Periodically rotate managed keystores nearing expiry (only on the cluster leader).
+/// Reload the bootstrap configuration file on SIGHUP (partners / virtual files / remote partners /
+/// listeners are re-applied additively, and any new auto-start listener is started). Unix only.
+#[cfg(unix)]
+fn reload_task(
+    config_path: PathBuf,
+    store: Arc<JsonStore>,
+    manager: Arc<ServerManager>,
+    audit: Arc<AuditLog>,
+) {
+    tokio::spawn(async move {
+        let mut hup = match tokio::signal::unix::signal(tokio::signal::unix::SignalKind::hangup()) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("cannot install SIGHUP handler: {e}");
+                return;
+            }
+        };
+        while hup.recv().await.is_some() {
+            tracing::info!(
+                "SIGHUP: reloading configuration from {}",
+                config_path.display()
+            );
+            match Bootstrap::load(&config_path).and_then(|boot| bootstrap(&store, boot)) {
+                Ok(()) => {
+                    manager.start_auto().await;
+                    audit.success("system", "reload", config_path.display().to_string());
+                    tracing::info!("configuration reloaded from {}", config_path.display());
+                }
+                Err(e) => tracing::error!("configuration reload failed: {e}"),
+            }
+        }
+    });
+}
+
 fn rotation_task(
     pki: Arc<pki::PkiState>,
     cluster: Option<Arc<pesit_cluster::Cluster>>,

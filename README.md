@@ -61,6 +61,10 @@ header on TLS connections, Connect:Express `TCPIP_HEADER`), `compression` (0–3
 (PI 16 = 1) to translate article bytes Latin-1 ↔ EBCDIC CP037 on the wire; partners accept
 `preconnectPassword` for Connect:Express partners of type T/O.
 
+Sending `SIGHUP` re-reads `PESIT_CONFIG` and re-applies it additively (new / changed partners,
+virtual files, remote partners and listeners; new auto-start listeners are started), so the YAML can
+stay the source of truth without a restart.
+
 ### One-shot CLI
 
 ```bash
