@@ -145,6 +145,10 @@ pub struct VirtualFile {
     pub record_format: u32,
     /// Text mode: articles are lines (LF stripped/added) instead of binary chunks.
     pub text: bool,
+    /// Storage connector id (None = local filesystem via receiveDirectory / sendFile).
+    pub connector: Option<String>,
+    /// Path / key within the connector.
+    pub connector_path: Option<String>,
     /// Creation time.
     pub created_at: Option<String>,
     /// Update time.
@@ -167,6 +171,8 @@ impl Default for VirtualFile {
             record_length: 1024,
             record_format: 0x80,
             text: false,
+            connector: None,
+            connector_path: None,
             created_at: None,
             updated_at: None,
         }
@@ -496,6 +502,68 @@ impl Default for TransferRecord {
     }
 }
 
+/// A storage connector definition (S3, SFTP or local).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct ConnectorConfig {
+    /// Identifier.
+    pub id: String,
+    /// Description.
+    pub description: Option<String>,
+    /// Backend type: `s3`, `sftp` or `local`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// S3 bucket.
+    pub bucket: Option<String>,
+    /// S3 region.
+    pub region: Option<String>,
+    /// S3 endpoint (MinIO / non-AWS).
+    pub endpoint: Option<String>,
+    /// S3 access key id.
+    pub access_key: Option<String>,
+    /// S3 secret access key.
+    pub secret_key: Option<String>,
+    /// S3 path-style addressing (MinIO).
+    pub path_style: bool,
+    /// SFTP host.
+    pub host: Option<String>,
+    /// SFTP port.
+    pub port: u16,
+    /// SFTP user.
+    pub user: Option<String>,
+    /// SFTP password.
+    pub password: Option<String>,
+    /// Base path prepended to remote paths (SFTP / local).
+    pub base_path: Option<String>,
+    /// Creation time.
+    pub created_at: Option<String>,
+    /// Update time.
+    pub updated_at: Option<String>,
+}
+
+impl Default for ConnectorConfig {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            description: None,
+            kind: "s3".into(),
+            bucket: None,
+            region: None,
+            endpoint: None,
+            access_key: None,
+            secret_key: None,
+            path_style: true,
+            host: None,
+            port: 22,
+            user: None,
+            password: None,
+            base_path: None,
+            created_at: None,
+            updated_at: None,
+        }
+    }
+}
+
 /// Store table names.
 pub mod tables {
     /// Partners.
@@ -508,8 +576,17 @@ pub mod tables {
     pub const SERVERS: &str = "servers";
     /// Transfers.
     pub const TRANSFERS: &str = "transfers";
+    /// Storage connectors.
+    pub const CONNECTORS: &str = "connectors";
     /// All tables.
-    pub const ALL: [&str; 5] = [PARTNERS, FILES, REMOTE_PARTNERS, SERVERS, TRANSFERS];
+    pub const ALL: [&str; 6] = [
+        PARTNERS,
+        FILES,
+        REMOTE_PARTNERS,
+        SERVERS,
+        TRANSFERS,
+        CONNECTORS,
+    ];
 }
 
 #[cfg(test)]

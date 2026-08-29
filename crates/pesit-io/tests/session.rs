@@ -386,7 +386,7 @@ async fn write_then_read_round_trip() {
     assert_eq!(out.data.data_bytes, 500_000);
     assert_eq!(out.data.articles, 500);
     assert_eq!(out.data.last_sync, 15);
-    assert_eq!(store.received.lock().map(|r| r.len()).unwrap_or(0), 1);
+    assert_eq!(store.received.lock().map_or(0, |r| r.len()), 1);
     assert_eq!(
         store
             .received

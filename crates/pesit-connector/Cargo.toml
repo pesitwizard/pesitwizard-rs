@@ -1,0 +1,23 @@
+[package]
+name = "pesit-connector"
+description = "Storage connectors for PeSIT Wizard: stage files to and from S3 and SFTP backends"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+serde.workspace = true
+tokio.workspace = true
+aws-sdk-s3.workspace = true
+russh.workspace = true
+russh-sftp.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true
+
+[lints]
+workspace = true

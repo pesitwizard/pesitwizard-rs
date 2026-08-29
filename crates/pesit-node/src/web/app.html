@@ -114,6 +114,7 @@ label.chk input{width:16px;height:16px;accent-color:var(--accent)}
       <button data-tab="partners"><span class="ic">◈</span>Partners</button>
       <button data-tab="files"><span class="ic">▦</span>Virtual files</button>
       <button data-tab="remotes"><span class="ic">☁</span>Remote servers</button>
+      <button data-tab="connectors"><span class="ic">▤</span>Connectors</button>
       <button data-tab="send"><span class="ic">⇑</span>Send / Receive</button>
       <button data-tab="certs"><span class="ic">❖</span>Certificates</button>
       <button data-tab="schedules"><span class="ic">◷</span>Schedules</button>
@@ -171,6 +172,7 @@ const TABS={
   partners:{title:'Partners',sub:'Remote parties allowed to connect',render:renderPartners},
   files:{title:'Virtual files',sub:'Logical files exposed to partners',render:renderFiles},
   remotes:{title:'Remote servers',sub:'Servers this node connects out to',render:renderRemotes},
+  connectors:{title:'Connectors',sub:'S3 / SFTP / local storage backends for virtual files',render:renderConnectors},
   send:{title:'Send / Receive',sub:'Initiate an outgoing transfer or message',auto:3000,render:renderSend},
   certs:{title:'Certificates',sub:'Keystores, truststores, local CA and Vault PKI',render:renderCerts},
   transfers:{title:'Transfers',sub:'Inbound and outbound records',auto:2500,render:renderTransfers},
@@ -429,7 +431,7 @@ async function renderPartners(){
 async function createPartner(f){const d=formObj(f);d.maxConnections=+d.maxConnections;d.enabled=true;try{await api('/config/partners',{method:'POST',body:JSON.stringify(d)});toast('Partner created',d.id,'ok');renderPartners()}catch(e){toast('Create failed',e.message,'err')}return false}
 
 async function renderFiles(){
-  const fs=await api('/config/files');
+  const [fs,conns]=await Promise.all([api('/config/files'),api('/config/connectors').catch(()=>[])]);
   $('#view').innerHTML=`
    <div class="panel"><div class="panel-h"><h2>Virtual files</h2><span class="sub">${fs.length} configured</span></div>
      <table><thead><tr><th>ID</th><th>Direction</th><th>Format</th><th>LREC</th><th>Path / pattern</th><th></th></tr></thead><tbody>
@@ -447,12 +449,45 @@ async function renderFiles(){
      <label class="f">Receive dir<input name="receiveDirectory" value="/data/received"></label>
      <label class="f">Receive pattern<input name="receiveFilenamePattern" value="${'${virtualFile}_${timestamp}'}"></label>
      <label class="f">Send file<input name="sendFile" placeholder="/data/send/PWRECV"></label>
+     <label class="f">Connector<select name="connector"><option value="">— local filesystem —</option>${conns.map(c=>`<option value="${esc(c.id)}">${esc(c.id)} (${esc(c.type)})</option>`).join('')}</select></label>
+     <label class="f">Connector path<input name="connectorPath" placeholder="${'incoming/${transferId}.dat'}"></label>
      <label class="f chk"><input type="checkbox" name="text">Text mode</label>
      <label class="f chk"><input type="checkbox" name="overwrite">Overwrite</label>
      <div class="form-foot"><button class="btn primary" type="submit">Create virtual file</button></div>
    </form></div>`;
 }
 async function createFile(f){const d=formObj(f);d.recordLength=+d.recordLength;d.recordFormat=+d.recordFormat;d.enabled=true;try{await api('/config/files',{method:'POST',body:JSON.stringify(d)});toast('Virtual file created',d.id,'ok');renderFiles()}catch(e){toast('Create failed',e.message,'err')}return false}
+
+async function renderConnectors(){
+  const cs=await api('/config/connectors');
+  const rows=cs.length?cs.map(c=>`<tr><td class="mono">${esc(c.id)}</td><td><span class="pill ${c.type==='s3'?'info':c.type==='sftp'?'warn':'mut'}">${esc(c.type)}</span></td>
+     <td class="mono muted">${esc(c.type==='s3'?(c.endpoint||'aws')+'/'+(c.bucket||''):c.type==='sftp'?(c.host||'')+':'+(c.port||22):(c.basePath||''))}</td>
+     <td class="nowrap row"><button class="btn sm" onclick="testConn('${esc(c.id)}')">Test</button><button class="btn sm danger" onclick="delConn('${esc(c.id)}')">✕</button></td></tr>`).join(''):emptyRow(4,'No connector yet');
+  $('#view').innerHTML=`
+   <div class="panel"><div class="panel-h"><h2>Connectors</h2><span class="sub">${cs.length} · S3, SFTP or local</span></div>
+     <table><thead><tr><th>ID</th><th>Type</th><th>Target</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+   <div class="panel"><div class="panel-h"><h2>New connector</h2></div>
+   <form class="grid" onsubmit="createConn(this);return false">
+     <label class="f">ID<input name="id" required placeholder="s3-prod"></label>
+     <label class="f">Type<select name="type" onchange="connType(this)"><option value="s3">S3</option><option value="sftp">SFTP</option><option value="local">Local</option></select></label>
+     <label class="f _s3">Bucket<input name="bucket" placeholder="my-bucket"></label>
+     <label class="f _s3">Endpoint<input name="endpoint" placeholder="https://minio:9000 (optional)"></label>
+     <label class="f _s3">Region<input name="region" placeholder="us-east-1"></label>
+     <label class="f _s3">Access key<input name="accessKey"></label>
+     <label class="f _s3">Secret key<input name="secretKey" type="password"></label>
+     <label class="f chk _s3"><input type="checkbox" name="pathStyle" checked>Path-style (MinIO)</label>
+     <label class="f _sftp hide">Host<input name="host" placeholder="sftp.example.com"></label>
+     <label class="f _sftp hide">Port<input name="port" type="number" value="22"></label>
+     <label class="f _sftp hide">User<input name="user"></label>
+     <label class="f _sftp hide">Password<input name="password" type="password"></label>
+     <label class="f _sftp _local hide">Base path<input name="basePath" placeholder="/upload"></label>
+     <div class="form-foot"><button class="btn primary" type="submit">Create connector</button></div>
+   </form></div>`;
+}
+function connType(sel){const t=sel.value;$$('._s3').forEach(e=>e.classList.toggle('hide',t!=='s3'));$$('._sftp').forEach(e=>e.classList.toggle('hide',t!=='sftp'));$$('._local').forEach(e=>e.classList.toggle('hide',t==='s3'))}
+async function createConn(f){const d=formObj(f);if(d.port)d.port=+d.port;try{await api('/config/connectors',{method:'POST',body:JSON.stringify(d)});toast('Connector created',d.id,'ok');renderConnectors()}catch(e){toast('Create failed',e.message,'err')}}
+async function testConn(id){toast('Testing…','');try{const r=await api('/config/connectors/'+encodeURIComponent(id)+'/test',{method:'POST'});toast(r.success?'Connector reachable':'Connector error',r.message||r.type,r.success?'ok':'err')}catch(e){toast('Test failed',e.message,'err')}}
+async function delConn(id){if(!confirm('Delete connector '+id+'?'))return;try{await api('/config/connectors/'+encodeURIComponent(id),{method:'DELETE'});toast('Deleted',id,'ok');renderConnectors()}catch(e){toast('Delete failed',e.message,'err')}}
 
 async function renderRemotes(){
   const rs=await capi('/servers');

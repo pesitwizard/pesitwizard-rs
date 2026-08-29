@@ -65,6 +65,10 @@ struct Active {
     last_update: Instant,
     last_bytes: u64,
     last_sync: u32,
+    /// Receive: upload the staged file to (connector id, remote key, local temp) on completion.
+    connector_upload: Option<(String, String, PathBuf)>,
+    /// Send: local staging file to delete when the transfer ends.
+    connector_temp: Option<PathBuf>,
 }
 
 /// The PeSIT Wizard server handler.
@@ -239,6 +243,8 @@ impl PwHandler {
                     last_update: Instant::now(),
                     last_bytes: 0,
                     last_sync: 0,
+                    connector_upload: None,
+                    connector_temp: None,
                 },
             );
         }
@@ -255,6 +261,97 @@ impl PwHandler {
         {
             tracing::error!("cannot update transfer record {record_id}: {e}");
         }
+    }
+
+    /// Mutate an active transfer entry.
+    fn set_active(&self, handle: u64, f: impl FnOnce(&mut Active)) {
+        if let Ok(mut a) = self.active.lock() {
+            if let Some(x) = a.get_mut(&handle) {
+                f(x);
+            }
+        }
+    }
+
+    /// A local staging file path.
+    fn staging_path(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join("pesitwizard-staging");
+        let _ = std::fs::create_dir_all(&dir);
+        let safe: String = name
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_') {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        dir.join(format!("{}-{safe}", uuid::Uuid::new_v4().simple()))
+    }
+
+    /// The remote key of a connector-backed virtual file.
+    fn connector_key(
+        &self,
+        vf: &VirtualFile,
+        session: &SessionInfo,
+        file: &FileSpec,
+        tid: u32,
+        default: &str,
+    ) -> String {
+        let Some(pattern) = vf.connector_path.as_deref().filter(|c| !c.is_empty()) else {
+            return default.to_owned();
+        };
+        let tid_s = tid.to_string();
+        pesit_app::http::resolve_placeholders(
+            pattern,
+            &[
+                ("virtualFile", file.file_name.as_str()),
+                ("transferId", tid_s.as_str()),
+                ("timestamp", now_compact().as_str()),
+                ("date", today().as_str()),
+                ("time", now_time().as_str()),
+                ("partnerId", session.requester.as_str()),
+                ("serverId", self.server.server_id.as_str()),
+            ],
+        )
+    }
+
+    /// Fetch a connector object into a local file (blocking on the async connector).
+    fn stage_fetch(&self, connector_id: &str, remote: &str, dest: &Path) -> Result<(), Refusal> {
+        let store = Arc::clone(&self.store);
+        let (cid, remote, dest) = (connector_id.to_owned(), remote.to_owned(), dest.to_owned());
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let connector = crate::connector::build(&store, &cid).map_err(|e| {
+                    refusal(
+                        Diagnostic::CANNOT_OPEN,
+                        format!("connector '{cid}': {}", e.message),
+                    )
+                })?;
+                connector.fetch(&remote, &dest).await.map_err(|e| {
+                    refusal(
+                        Diagnostic::IO_ERROR,
+                        format!("connector fetch '{remote}': {e}"),
+                    )
+                })?;
+                Ok::<(), Refusal>(())
+            })
+        })
+    }
+
+    /// Upload a local file to a connector object (blocking on the async connector).
+    fn stage_store(&self, connector_id: &str, remote: &str, src: &Path) -> Result<(), String> {
+        let store = Arc::clone(&self.store);
+        let (cid, remote, src) = (connector_id.to_owned(), remote.to_owned(), src.to_owned());
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async move {
+                let connector = crate::connector::build(&store, &cid).map_err(|e| e.message)?;
+                connector
+                    .store(&src, &remote)
+                    .await
+                    .map_err(|e| e.to_string())
+            })
+        })
     }
 
     fn check_partner(
@@ -438,6 +535,12 @@ impl ServerHandler for PwHandler {
             }
             (path, None)
         };
+        let connector = vf.connector.clone().filter(|c| !c.is_empty());
+        let (path, restart) = if connector.is_some() {
+            (Self::staging_path(&format!("recv-{}-{tid}", vf.id)), None)
+        } else {
+            (path, restart)
+        };
         let sink = FileSink::create(&path, vf.record_format(), restart.map(position_of))
             .map_err(|e| io_refusal(&e, "cannot create file"))?;
         let mut record = self.new_record(
@@ -456,6 +559,15 @@ impl ServerHandler for PwHandler {
         }
         let record_id = record.transfer_id.clone();
         let handle = self.register(record)?;
+        if let Some(cid) = &connector {
+            let default = path
+                .file_name()
+                .map_or_else(|| vf.id.clone(), |n| n.to_string_lossy().into_owned());
+            let remote = self.connector_key(&vf, session, file, tid, &default);
+            let p = path.clone();
+            let cid = cid.clone();
+            self.set_active(handle, move |a| a.connector_upload = Some((cid, remote, p)));
+        }
         self.cancels.register(&record_id);
         tracing::info!(
             "[{}] {} sends '{}' (transfer {tid}) to {}{}",
@@ -497,15 +609,23 @@ impl ServerHandler for PwHandler {
                 format!("virtual file '{}' cannot be read", vf.id),
             ));
         }
-        let path = vf.send_file.clone().filter(|p| !p.is_empty()).map_or_else(
-            || Path::new(&self.server.send_directory).join(&vf.id),
-            PathBuf::from,
-        );
+        let tid = self.pesit_transfer_id(file.transfer_id);
+        let connector = vf.connector.clone().filter(|c| !c.is_empty());
+        let path = if let Some(cid) = &connector {
+            let temp = Self::staging_path(&format!("send-{}-{tid}", vf.id));
+            let remote = self.connector_key(&vf, session, file, tid, &vf.id);
+            self.stage_fetch(cid, &remote, &temp)?;
+            temp
+        } else {
+            vf.send_file.clone().filter(|p| !p.is_empty()).map_or_else(
+                || Path::new(&self.server.send_directory).join(&vf.id),
+                PathBuf::from,
+            )
+        };
         let meta =
             std::fs::metadata(&path).map_err(|e| io_refusal(&e, &path.display().to_string()))?;
         let source = FileSource::open(&path, vf.record_format(), vf.record_length as usize)
             .map_err(|e| io_refusal(&e, "cannot open file"))?;
-        let tid = self.pesit_transfer_id(file.transfer_id);
         let key = Self::restart_key(session, file, tid);
         let mut checkpoints = self
             .checkpoints(&key)
@@ -550,6 +670,10 @@ impl ServerHandler for PwHandler {
         record.file_size = Some(meta.len());
         let record_id = record.transfer_id.clone();
         let handle = self.register(record)?;
+        if connector.is_some() {
+            let p = path.clone();
+            self.set_active(handle, move |a| a.connector_temp = Some(p));
+        }
         self.cancels.register(&record_id);
         tracing::info!(
             "[{}] {} reads '{}' (transfer {tid}) from {} ({} bytes)",
@@ -635,7 +759,8 @@ impl ServerHandler for PwHandler {
                 self.update_record(&record_id, |r| apply_progress(r, p, total, sync_changed));
             }
             TransferEvent::Ended { data, diag } => {
-                active.remove(&handle);
+                let removed = active.remove(&handle);
+                drop(active);
                 self.cancels.remove(&record_id);
                 let checksum = self
                     .store
@@ -696,9 +821,36 @@ impl ServerHandler for PwHandler {
                     session.id,
                     data.end
                 );
+                if let Some(a) = removed {
+                    let completed = data.end == DataEnd::Completed && diag.is_ok();
+                    if let Some((cid, remote, temp)) = a.connector_upload {
+                        if completed {
+                            match self.stage_store(&cid, &remote, &temp) {
+                                Ok(()) => {
+                                    self.update_record(&record_id, |r| {
+                                        r.local_path = Some(format!("{cid}:{remote}"));
+                                    });
+                                    tracing::info!(
+                                        "[{}] uploaded {record_id} to connector '{cid}' ({remote})",
+                                        session.id
+                                    );
+                                }
+                                Err(e) => self.update_record(&record_id, |r| {
+                                    r.status = TransferStatus::Failed;
+                                    r.error_message = Some(format!("connector upload failed: {e}"));
+                                }),
+                            }
+                        }
+                        let _ = std::fs::remove_file(&temp);
+                    }
+                    if let Some(temp) = a.connector_temp {
+                        let _ = std::fs::remove_file(&temp);
+                    }
+                }
             }
             TransferEvent::Failed(msg) => {
-                active.remove(&handle);
+                let removed = active.remove(&handle);
+                drop(active);
                 self.cancels.remove(&record_id);
                 self.update_record(&record_id, |r| {
                     r.status = if r.last_sync_point > 0 {
@@ -710,6 +862,14 @@ impl ServerHandler for PwHandler {
                     r.error_message = Some(msg.clone());
                 });
                 tracing::warn!("[{}] transfer {record_id} failed: {msg}", session.id);
+                if let Some(a) = removed {
+                    if let Some((_, _, temp)) = a.connector_upload {
+                        let _ = std::fs::remove_file(&temp);
+                    }
+                    if let Some(temp) = a.connector_temp {
+                        let _ = std::fs::remove_file(&temp);
+                    }
+                }
             }
         }
     }

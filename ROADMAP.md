@@ -17,6 +17,7 @@ one binary, as plain features (config-toggled where relevant), and drop the rest
 - **Certificate / CA management with native HashiCorp Vault support** (see below).
 - **Audit log** and **configuration backup / restore** (see below).
 - **Clustering / HA** over NATS + JetStream (see below).
+- **Storage connectors** (S3, SFTP, local) that back virtual files (see below).
 
 ## Dropped (no value for a never-commercialised product)
 
@@ -70,6 +71,24 @@ Replaces the enterprise JGroups cluster module with a Rust-native design (`async
 - **Scheduled transfers** driven by the leader: recurring send / receive jobs (`/api/v1/schedules`,
   Schedules web UI tab) fired only on the cluster leader so each job runs once. ✔
 - Later: cron expressions (interval-based today), and richer work distribution.
+
+### 5. Storage connectors — *done*
+
+A virtual file can be backed by an external storage system instead of the local filesystem, in the
+`pesit-connector` crate.
+
+- Connector types: **S3** (any S3-compatible object store — AWS S3, MinIO, …, via `aws-sdk-s3`),
+  **SFTP** (`russh` / `russh-sftp`) and **local** directory. Managed at `/api/v1/config/connectors`
+  and the **Connectors** web UI tab, with a `POST .../{id}/test` reachability check. ✔
+- A virtual file references a connector by id plus a target path template (`connectorPath`, e.g.
+  `incoming/${transferId}.dat`). On a *receive*, the file is staged locally then uploaded to the
+  connector when the transfer completes; on a *send*, it is fetched from the connector into a staging
+  file and streamed to the partner. Staging files are cleaned up on completion or failure. ✔
+- Connector definitions are included in configuration backup / restore. Secrets stay node-local
+  (connectors are not replicated across the cluster). ✔
+- Validated end to end against **MinIO** (`integration/s3/`): a received file lands in the bucket and
+  is read back from it with a matching checksum. ✔
+- Later: streaming without a staging file, and per-connector retry / bandwidth policy.
 
 ## Related
 

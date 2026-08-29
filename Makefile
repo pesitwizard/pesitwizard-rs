@@ -38,3 +38,6 @@ vault-test: release
 
 cluster-test: release
 	bash integration/cluster/build-and-test.sh
+
+connector-test: release
+	bash integration/s3/build-and-test.sh

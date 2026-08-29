@@ -84,5 +84,6 @@ multipart `file`); PKCS#12 stores are not supported — convert them with `opens
 * [docs/ui.md](docs/ui.md) — the web UI
 * [docs/certificates.md](docs/certificates.md) — certificate / CA management and the native Vault PKI backend
 * [docs/clustering.md](docs/clustering.md) — NATS / JetStream clustering
+* [docs/connectors.md](docs/connectors.md) — S3 / SFTP / local storage connectors backing virtual files
 * [docs/gap-analysis.md](docs/gap-analysis.md) — gaps of the Java implementation and how this addresses them
 * [ROADMAP.md](ROADMAP.md) — planned capabilities (certificate/CA + Vault, audit, backup/restore, clustering)

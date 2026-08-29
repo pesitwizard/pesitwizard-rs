@@ -16,13 +16,14 @@ use serde_json::{json, Value};
 use crate::api::App;
 
 /// Store tables carried in a backup (configuration only — not transfer records).
-pub const CONFIG_TABLES: [&str; 7] = [
+pub const CONFIG_TABLES: [&str; 8] = [
     "partners",
     "virtual_files",
     "remote_partners",
     "servers",
     "remote_servers",
     "client_partners",
+    "connectors",
     "pki",
 ];
 

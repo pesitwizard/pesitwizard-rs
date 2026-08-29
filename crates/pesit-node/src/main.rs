@@ -13,6 +13,7 @@ mod audit;
 mod backup;
 mod cluster;
 mod config;
+mod connector;
 mod handler;
 mod manager;
 mod model;

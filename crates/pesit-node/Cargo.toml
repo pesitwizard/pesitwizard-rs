@@ -16,6 +16,7 @@ pesit-io.workspace = true
 pesit-client.workspace = true
 pesit-pki.workspace = true
 pesit-cluster.workspace = true
+pesit-connector.workspace = true
 reqwest.workspace = true
 futures.workspace = true
 pesit-app.workspace = true

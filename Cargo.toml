@@ -8,6 +8,7 @@ members = [
     "crates/pesit-client",
     "crates/pesit-pki",
     "crates/pesit-cluster",
+    "crates/pesit-connector",
 ]
 
 [workspace.package]
@@ -25,6 +26,7 @@ pesit-app = { path = "crates/pesit-app" }
 pesit-client = { path = "crates/pesit-client" }
 pesit-pki = { path = "crates/pesit-pki" }
 pesit-cluster = { path = "crates/pesit-cluster" }
+pesit-connector = { path = "crates/pesit-connector" }
 sha2 = "0.10"
 hex = "0.4"
 anyhow = "1"
@@ -56,6 +58,9 @@ time = { version = "0.3", features = ["formatting"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 async-nats = "0.46"
 futures = "0.3"
+aws-sdk-s3 = "=1.128.0"
+russh = "0.54"
+russh-sftp = "2"
 tempfile = "3"
 proptest = "1"
 

@@ -16,7 +16,8 @@ use serde_json::json;
 
 use crate::manager::{ManagerError, ServerManager};
 use crate::model::{
-    tables, Partner, PesitServerConfig, RemotePartner, TransferRecord, TransferStatus, VirtualFile,
+    tables, ConnectorConfig, Partner, PesitServerConfig, RemotePartner, TransferRecord,
+    TransferStatus, VirtualFile,
 };
 
 /// Shared application state.
@@ -102,6 +103,16 @@ pub fn router(app: Arc<App>) -> Router {
                 .put(update::<RemotePartner>)
                 .delete(delete::<RemotePartner>),
         )
+        .route(
+            "/api/v1/config/connectors",
+            get(list::<ConnectorConfig>).post(create::<ConnectorConfig>),
+        )
+        .route(
+            "/api/v1/config/connectors/{id}",
+            get(get_one::<ConnectorConfig>)
+                .put(update::<ConnectorConfig>)
+                .delete(delete::<ConnectorConfig>),
+        )
         .route("/api/v1/transfers", get(list_transfers))
         .route("/api/v1/transfers/active", get(active_transfers))
         .route("/api/v1/transfers/stats", get(transfer_stats))
@@ -119,6 +130,7 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(crate::audit::routes())
         .merge(crate::cluster::routes())
         .merge(crate::schedule::routes())
+        .merge(crate::connector::routes())
         .merge(crate::backup::routes())
         .layer(middleware::from_fn(move |req, next| {
             require_api_key(key.clone(), req, next)
@@ -177,6 +189,7 @@ macro_rules! entity {
 entity!(Partner, tables::PARTNERS, "Partner");
 entity!(VirtualFile, tables::FILES, "Virtual file");
 entity!(RemotePartner, tables::REMOTE_PARTNERS, "Remote partner");
+entity!(ConnectorConfig, tables::CONNECTORS, "Connector");
 
 async fn list<T: Entity>(State(app): AppState) -> ApiResult<Json<Vec<T>>> {
     Ok(Json(app.store.list(T::TABLE)?))

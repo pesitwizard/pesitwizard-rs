@@ -166,6 +166,9 @@ fn local_transfers(app: &App, limit: usize) -> Vec<Value> {
 
 /// Publish a configuration change to the cluster, if clustering is enabled.
 pub async fn publish(app: &App, op: &str, table: &str, key: &str, doc: Option<Value>) {
+    if !backup::CLUSTER_TABLES.contains(&table) {
+        return;
+    }
     if let Some(cluster) = &app.cluster {
         cluster.publish_config(op, table, key, doc).await;
     }

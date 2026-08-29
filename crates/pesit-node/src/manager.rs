@@ -85,10 +85,7 @@ impl ServerManager {
     /// Whether a listener is running.
     #[must_use]
     pub fn is_running(&self, server_id: &str) -> bool {
-        self.running
-            .lock()
-            .map(|r| r.contains_key(server_id))
-            .unwrap_or(false)
+        self.running.lock().is_ok_and(|r| r.contains_key(server_id))
     }
 
     /// Status of a listener.
