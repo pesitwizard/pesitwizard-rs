@@ -483,11 +483,12 @@ async function renderConnectors(){
      <label class="f _sftp hide">User<input name="user"></label>
      <label class="f _sftp hide">Password<input name="password" type="password"></label>
      <label class="f _sftp _local hide">Base path<input name="basePath" placeholder="/upload"></label>
+     <label class="f">Retries<input name="maxRetries" type="number" value="3" min="1" title="Attempts on a transient failure"></label>
      <div class="form-foot"><button class="btn primary" type="submit">Create connector</button></div>
    </form></div>`;
 }
 function connType(sel){const t=sel.value;$$('._s3').forEach(e=>e.classList.toggle('hide',t!=='s3'));$$('._sftp').forEach(e=>e.classList.toggle('hide',t!=='sftp'));$$('._local').forEach(e=>e.classList.toggle('hide',t==='s3'))}
-async function createConn(f){const d=formObj(f);if(d.port)d.port=+d.port;try{await api('/config/connectors',{method:'POST',body:JSON.stringify(d)});toast('Connector created',d.id,'ok');renderConnectors()}catch(e){toast('Create failed',e.message,'err')}}
+async function createConn(f){const d=formObj(f);if(d.port)d.port=+d.port;if(d.maxRetries)d.maxRetries=+d.maxRetries;try{await api('/config/connectors',{method:'POST',body:JSON.stringify(d)});toast('Connector created',d.id,'ok');renderConnectors()}catch(e){toast('Create failed',e.message,'err')}}
 async function testConn(id){toast('Testing…','');try{const r=await api('/config/connectors/'+encodeURIComponent(id)+'/test',{method:'POST'});toast(r.success?'Connector reachable':'Connector error',r.message||r.type,r.success?'ok':'err')}catch(e){toast('Test failed',e.message,'err')}}
 async function delConn(id){if(!confirm('Delete connector '+id+'?'))return;try{await api('/config/connectors/'+encodeURIComponent(id),{method:'DELETE'});toast('Deleted',id,'ok');renderConnectors()}catch(e){toast('Delete failed',e.message,'err')}}
 

@@ -31,6 +31,9 @@ REST under `/api/v1/config/connectors` (admin API, `X-API-Key`) and the **Connec
   ```json
   { "id": "archive", "type": "local", "basePath": "/data/archive" }
   ```
+
+  Any connector may set `maxRetries` (default 3): a transient fetch / store failure is retried with
+  exponential backoff up to that many attempts before the transfer fails.
 * `DELETE /api/v1/config/connectors/{id}` — remove.
 * `POST /api/v1/config/connectors/{id}/test` — check reachability. Returns
   `{ "success": true, "type": "s3" }` or `{ "success": false, "message": "…" }`.

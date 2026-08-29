@@ -42,7 +42,7 @@ pub fn from_config(cfg: &ConnectorConfig) -> Result<Connector, ApiError> {
                 secret_key: cfg.secret_key.clone(),
                 path_style: cfg.path_style,
             });
-            Ok(Connector::S3(s3))
+            Ok(Connector::s3(s3).with_max_attempts(cfg.max_retries))
         }
         "sftp" => {
             let host = cfg
@@ -50,17 +50,19 @@ pub fn from_config(cfg: &ConnectorConfig) -> Result<Connector, ApiError> {
                 .clone()
                 .filter(|h| !h.is_empty())
                 .ok_or_else(|| ApiError::bad_request("SFTP connector needs a host"))?;
-            Ok(Connector::Sftp(SftpConnector::new(SftpConfig {
+            Ok(Connector::sftp(SftpConnector::new(SftpConfig {
                 host,
                 port: if cfg.port == 0 { 22 } else { cfg.port },
                 user: cfg.user.clone().unwrap_or_default(),
                 password: cfg.password.clone(),
                 base_path: cfg.base_path.clone(),
-            })))
+            }))
+            .with_max_attempts(cfg.max_retries))
         }
-        _ => Ok(Connector::Local(LocalConnector::new(
+        _ => Ok(Connector::local(LocalConnector::new(
             cfg.base_path.clone().unwrap_or_else(|| "/".into()),
-        ))),
+        ))
+        .with_max_attempts(cfg.max_retries)),
     }
 }
 

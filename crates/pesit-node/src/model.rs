@@ -550,6 +550,8 @@ pub struct ConnectorConfig {
     pub password: Option<String>,
     /// Base path prepended to remote paths (SFTP / local).
     pub base_path: Option<String>,
+    /// Attempts (initial try plus retries) for a transient fetch / store failure.
+    pub max_retries: u32,
     /// Creation time.
     pub created_at: Option<String>,
     /// Update time.
@@ -573,6 +575,7 @@ impl Default for ConnectorConfig {
             user: None,
             password: None,
             base_path: None,
+            max_retries: pesit_connector::DEFAULT_MAX_ATTEMPTS,
             created_at: None,
             updated_at: None,
         }
