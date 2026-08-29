@@ -91,6 +91,28 @@ enum Command {
         #[arg(long)]
         reply: bool,
     },
+    /// Export or import the configuration bundle offline (directly on the local database).
+    Backup {
+        #[command(subcommand)]
+        action: BackupAction,
+    },
+}
+
+/// Offline backup actions operating on the configuration database.
+#[derive(Debug, Subcommand)]
+enum BackupAction {
+    /// Write the configuration bundle to a file (or stdout with `-`).
+    Export {
+        /// Output path, or `-` for stdout.
+        #[arg(long, default_value = "-")]
+        out: String,
+    },
+    /// Restore a configuration bundle from a file (or stdin with `-`).
+    Import {
+        /// Input path, or `-` for stdin.
+        #[arg(long, default_value = "-")]
+        file: String,
+    },
 }
 
 /// Where to connect for one-shot commands.
@@ -257,6 +279,67 @@ async fn main() -> anyhow::Result<()> {
             if r.status != cmodel::TransferStatus::Completed {
                 std::process::exit(1);
             }
+            Ok(())
+        }
+        Command::Backup { action } => run_backup(opts, &store, action),
+    }
+}
+
+/// Export or import the configuration bundle offline, operating directly on the database.
+fn run_backup(
+    opts: &NodeOptions,
+    store: &Arc<JsonStore>,
+    action: BackupAction,
+) -> anyhow::Result<()> {
+    match action {
+        BackupAction::Export { out } => {
+            let tables = backup::dump(store).map_err(|e| anyhow::anyhow!(e.message))?;
+            let pki = pki::PkiState::open(opts.pki_dir.clone(), Arc::clone(store))
+                .ok()
+                .map_or(serde_json::Value::Null, |p| p.export_material());
+            let bundle = serde_json::json!({
+                "version": 1,
+                "generatedAt": pesit_app::time::now_iso(),
+                "node": env!("CARGO_PKG_VERSION"),
+                "tables": tables,
+                "pki": pki,
+            });
+            let text = serde_json::to_string_pretty(&bundle)?;
+            if out == "-" {
+                println!("{text}");
+            } else {
+                std::fs::write(&out, &text).with_context(|| format!("writing {out}"))?;
+                eprintln!("backup written to {out} ({} bytes)", text.len());
+            }
+            Ok(())
+        }
+        BackupAction::Import { file } => {
+            let text = if file == "-" {
+                let mut s = String::new();
+                std::io::Read::read_to_string(&mut std::io::stdin(), &mut s)?;
+                s
+            } else {
+                std::fs::read_to_string(&file).with_context(|| format!("reading {file}"))?
+            };
+            let bundle: serde_json::Value = serde_json::from_str(&text)?;
+            // Accept either the full { tables: {...} } bundle or a bare { table: [rows] } map.
+            let tables_val = bundle
+                .get("tables")
+                .cloned()
+                .unwrap_or_else(|| bundle.clone());
+            let tables = tables_val
+                .as_object()
+                .cloned()
+                .ok_or_else(|| anyhow::anyhow!("bundle has no 'tables' object"))?;
+            let restored =
+                backup::apply_tables(store, &tables).map_err(|e| anyhow::anyhow!(e.message))?;
+            if let Some(pki_val) = bundle.get("pki").filter(|v| !v.is_null()) {
+                if let Ok(p) = pki::PkiState::open(opts.pki_dir.clone(), Arc::clone(store)) {
+                    p.import_material(pki_val)
+                        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+                }
+            }
+            eprintln!("restored {restored} configuration records");
             Ok(())
         }
     }

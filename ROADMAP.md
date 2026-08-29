@@ -56,7 +56,8 @@ Replaces the enterprise `pki` + admin CA/certificate features. See
 
 - Export the whole configuration (partners, virtual files, listeners, remote servers, Vault config
   and certificate material) as a JSON bundle and import it back — `/api/v1/backup` and the System
-  web UI tab. ✔ (bundle signing / a CLI subcommand: later.)
+  web UI tab, and offline via the `pesitwizard backup export|import` CLI subcommand (config +
+  certificate material, directly on the database). ✔ (bundle signing: later.)
 
 ### 4. Clustering / HA — via NATS + JetStream — *done (v1)*
 

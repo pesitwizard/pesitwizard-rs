@@ -67,6 +67,10 @@ header on TLS connections, Connect:Express `TCPIP_HEADER`), `compression` (0–3
 pesitwizard send    --host cx --port 5000 --server-id CETOM1 --partner PWSRV01 file.dat --remote PWRECV
 pesitwizard receive --host cx --port 5000 --server-id CETOM1 --partner PWSRV01 PWSEND --file out.dat
 pesitwizard message --host cx --port 5000 --server-id CETOM1 --partner PWSRV01 "hello" --reply
+
+# Offline configuration backup / restore (config + certificate material), directly on the database:
+pesitwizard backup export --out backup.json
+pesitwizard backup import --file backup.json --db /path/to/new.sqlite
 ```
 
 ### Transfers
