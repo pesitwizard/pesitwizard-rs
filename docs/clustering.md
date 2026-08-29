@@ -11,18 +11,20 @@ run more than one cluster against the same NATS, `PESIT_CLUSTER_NAME`. Implement
   TTL; a node that stops is dropped when its key expires. `GET /api/v1/cluster` and the **Cluster**
   web UI tab list the members.
 * **Leader election** — a KV lease (`pesit_<name>_leader`): a node acquires the `leader` key with a
-  create (atomic), renews it while alive, and the TTL lets another node take over on failure. This is
-  the hook for future leader-driven work (scheduled transfers).
+  create (atomic), renews it while alive, and the TTL lets another node take over on failure.
 * **Cluster-wide transfer history** — `GET /api/v1/cluster/transfers` aggregates the transfer records
   of every member (each node must advertise a reachable address via `PESIT_CLUSTER_ADVERTISE`,
   `host:port` of its admin API). Shown in the Cluster web UI tab.
 * **Scheduled transfers** — recurring send / receive jobs (`/api/v1/schedules`, Schedules web UI tab)
-  are evaluated on every node but only fire on the current leader, so a job runs once across the
-  cluster. Standalone nodes run their schedules directly.
+  replicate across the cluster (like the shared-policy tables). Each node evaluates every schedule but
+  fires only the ones it *owns* — the owner is a deterministic slice of the schedule id over the
+  sorted live members — so a due job runs exactly once and the load spreads. The new next-run time is
+  replicated so a peer can take over on failover. A standalone node owns everything.
 * **Configuration replication** — a change to a shared-policy object (partners, virtual files, remote
-  partners) is published on `pesit.<name>.config` and applied by every other node. A joining node
-  first requests a full snapshot on `pesit.<name>.sync` from a peer and restores it, then follows the
-  live stream. Listeners stay node-local (ports and binding are per node).
+  partners and schedules) is published on `pesit.<name>.config` and applied by every other node. A
+  joining node first requests a full snapshot on `pesit.<name>.sync` from a peer and restores it, then
+  follows the live stream. Listeners and connectors stay node-local (ports, binding and credentials
+  are per node).
 
 ## Integration test
 

@@ -16,12 +16,13 @@ bottom of the sidebar.
 | **Dashboard** | Live overview: listeners up, in-progress / completed / failed counts and bytes across inbound *and* outbound, plus the most recent transfers (both directions) and configuration counts. |
 | **Listeners** | Inbound PeSIT E listeners: status (with start / stop), transport (plain / TLS), sync settings; a form to create a listener (server id, port, entity size, sync interval / window, directories, TLS, auto-start). |
 | **Partners** | Remote parties allowed to connect: access type, password, max connections, allowed files; create / delete. |
-| **Virtual files** | Logical files exposed to partners: direction, record format (binary / text), record length, receive directory + filename pattern or send file; create / delete. |
+| **Virtual files** | Logical files exposed to partners: direction, record format (binary / text), EBCDIC translation, record length, receive directory + filename pattern or send file, and an optional storage connector + path; create / delete. |
 | **Remote servers** | Servers this node connects out to: address, server id, transport, default; test connectivity, upload a CA (truststore), set default, delete. |
-| **Send / Receive** | Initiate an outgoing transfer (send / receive) or a message: pick a remote server, partner id, file names, sync / compression / text options; a live table of outbound transfers with cancel / retry. |
+| **Connectors** | Storage backends (S3 / SFTP / local) that back virtual files: create with type-specific settings and a retry count, a reachability *Test*, and delete — see [connectors.md](connectors.md). |
+| **Send / Receive** | Initiate an outgoing transfer (send / receive) or a message: pick a remote server, partner id, file names, sync / compression / text / EBCDIC options, an optional label (PI 37) and free message (PI 99); a live table of outbound transfers with cancel / retry. |
 | **Certificates** | Keystores, truststores, the local CA and the Vault PKI backend — see [certificates.md](certificates.md). |
 | **Transfers** | Inbound and outbound transfer records (toggle), with live status, progress, and cancel. |
-| **Schedules** | Recurring send / receive jobs; on a cluster they fire only on the leader. |
+| **Schedules** | Recurring send / receive jobs on a fixed interval or a cron expression; across a cluster they replicate and are distributed by ownership so each job fires once. |
 | **Cluster** | NATS / JetStream membership, the elected leader and a cluster-wide transfer history (empty when the node runs standalone). |
 | **System** | The append-only audit log (config changes, listener start/stop, certificate / Vault operations, transfer outcomes) and configuration backup / restore (download a JSON bundle, restore it back). |
 
