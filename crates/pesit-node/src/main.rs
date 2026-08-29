@@ -173,8 +173,10 @@ async fn main() -> anyhow::Result<()> {
         bootstrap(&store, boot)?;
     }
 
-    let audit =
-        Arc::new(AuditLog::new(Arc::clone(&store)).map_err(|e| anyhow::anyhow!(e.to_string()))?);
+    let audit = Arc::new(
+        AuditLog::with_retention(Arc::clone(&store), opts.audit_max_entries)
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?,
+    );
     let engine = Arc::new(Engine::new(
         Arc::clone(&store),
         opts.engine_settings(),

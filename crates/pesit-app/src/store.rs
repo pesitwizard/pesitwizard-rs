@@ -161,6 +161,20 @@ impl JsonStore {
         Ok(n.max(0) as usize)
     }
 
+    /// Delete all but the `keep` most recently inserted documents; returns the number removed.
+    /// Used to bound append-only tables such as the audit log.
+    pub fn prune_oldest(&self, table: &str, keep: usize) -> Result<usize, StoreError> {
+        let conn = self.lock()?;
+        let removed = conn.execute(
+            &format!(
+                "DELETE FROM {table} WHERE seq NOT IN \
+                 (SELECT seq FROM {table} ORDER BY seq DESC LIMIT ?1)"
+            ),
+            params![keep as i64],
+        )?;
+        Ok(removed)
+    }
+
     /// Read-modify-write a document; returns `false` when the key does not exist.
     pub fn update<T: Serialize + DeserializeOwned>(
         &self,

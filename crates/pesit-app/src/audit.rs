@@ -45,17 +45,41 @@ pub struct AuditEvent {
     pub outcome: Outcome,
 }
 
+/// Default cap on retained audit events (0 disables retention).
+pub const DEFAULT_MAX_ENTRIES: usize = 50_000;
+/// Prune at most once every this many writes, to amortise the cost.
+const PRUNE_INTERVAL: u64 = 256;
+
 /// Records audit events into the shared store (best-effort; never fails a request).
 #[derive(Clone)]
 pub struct AuditLog {
     store: Arc<JsonStore>,
+    max_entries: usize,
+    writes: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl AuditLog {
-    /// Create the log, ensuring its table exists.
+    /// Create the log with the default retention cap.
     pub fn new(store: Arc<JsonStore>) -> Result<Self, crate::store::StoreError> {
+        Self::with_retention(store, DEFAULT_MAX_ENTRIES)
+    }
+
+    /// Create the log, keeping at most `max_entries` events (0 = unlimited). Prunes once now.
+    pub fn with_retention(
+        store: Arc<JsonStore>,
+        max_entries: usize,
+    ) -> Result<Self, crate::store::StoreError> {
         store.ensure_table(TABLE)?;
-        Ok(Self { store })
+        if max_entries > 0 {
+            if let Err(e) = store.prune_oldest(TABLE, max_entries) {
+                tracing::warn!("cannot prune audit log: {e}");
+            }
+        }
+        Ok(Self {
+            store,
+            max_entries,
+            writes: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+        })
     }
 
     /// Record an event (best-effort).
@@ -80,6 +104,18 @@ impl AuditLog {
         };
         if let Err(e) = self.store.put(TABLE, &ev.id, &ev) {
             tracing::warn!("cannot write audit event: {e}");
+        }
+        // Bound the table periodically so the append-only log does not grow without limit.
+        if self.max_entries > 0
+            && self
+                .writes
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                % PRUNE_INTERVAL
+                == 0
+        {
+            if let Err(e) = self.store.prune_oldest(TABLE, self.max_entries) {
+                tracing::warn!("cannot prune audit log: {e}");
+            }
         }
     }
 
@@ -157,5 +193,25 @@ mod tests {
         assert_eq!(log.filtered(Some("listener"), 10).len(), 1);
         assert_eq!(log.filtered(Some("config"), 10).len(), 2);
         assert_eq!(log.stats(), (3, 2, 1));
+    }
+
+    #[test]
+    fn retention_caps_the_log_to_the_newest_entries() {
+        let store =
+            Arc::new(JsonStore::open(Path::new(":memory:")).unwrap_or_else(|e| panic!("{e}")));
+        let log = AuditLog::with_retention(Arc::clone(&store), 0).unwrap_or_else(|e| panic!("{e}"));
+        for i in 0..10 {
+            log.success("test", "write", format!("t{i}"));
+        }
+        assert_eq!(store.count(TABLE).unwrap_or_default(), 10);
+
+        // Reopening with a cap prunes down to the newest entries at construction.
+        let capped =
+            AuditLog::with_retention(Arc::clone(&store), 3).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(store.count(TABLE).unwrap_or_default(), 3);
+        let recent = capped.recent(10);
+        assert_eq!(recent.len(), 3);
+        assert_eq!(recent[0].target.as_deref(), Some("t9"));
+        assert_eq!(recent[2].target.as_deref(), Some("t7"));
     }
 }

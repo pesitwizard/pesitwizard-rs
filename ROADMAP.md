@@ -50,7 +50,7 @@ Replaces the enterprise `pki` + admin CA/certificate features. See
 
 - Append-only audit of configuration changes, listener start/stop, certificate / Vault operations
   and transfer outcomes, queryable via `/api/v1/audit` and the **System** web UI tab. Backed by the
-  shared store. ✔ (retention policy: later.)
+  shared store. Retention is bounded to `PESIT_AUDIT_MAX_ENTRIES` (default 50 000; oldest pruned). ✔
 
 ### 3. Backup / restore — *done*
 

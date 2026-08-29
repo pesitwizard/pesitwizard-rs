@@ -106,6 +106,14 @@ pub struct NodeOptions {
         global = true
     )]
     pub cert_rotation_days: i64,
+    /// Maximum audit-log entries to retain; the oldest are pruned (0 = unlimited).
+    #[arg(
+        long,
+        env = "PESIT_AUDIT_MAX_ENTRIES",
+        default_value_t = 50_000,
+        global = true
+    )]
+    pub audit_max_entries: usize,
     /// Node identifier reported in transfer records and cluster membership.
     #[arg(long, env = "PESIT_NODE_ID", default_value = "node-1", global = true)]
     pub node_id: String,
