@@ -5,6 +5,7 @@ pub mod ca;
 pub mod cert;
 pub mod ocsp;
 pub mod provider;
+pub mod sign;
 pub mod store;
 pub mod vault;
 

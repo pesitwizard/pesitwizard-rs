@@ -294,9 +294,10 @@ fn run_backup(
     match action {
         BackupAction::Export { out } => {
             let tables = backup::dump(store).map_err(|e| anyhow::anyhow!(e.message))?;
-            let pki = pki::PkiState::open(opts.pki_dir.clone(), Arc::clone(store))
-                .ok()
-                .map_or(serde_json::Value::Null, |p| p.export_material());
+            let pki_state = pki::PkiState::open(opts.pki_dir.clone(), Arc::clone(store)).ok();
+            let pki = pki_state
+                .as_ref()
+                .map_or(serde_json::Value::Null, pki::PkiState::export_material);
             let bundle = serde_json::json!({
                 "version": 1,
                 "generatedAt": pesit_app::time::now_iso(),
@@ -304,6 +305,7 @@ fn run_backup(
                 "tables": tables,
                 "pki": pki,
             });
+            let bundle = backup::sign_bundle(pki_state.as_ref(), bundle);
             let text = serde_json::to_string_pretty(&bundle)?;
             if out == "-" {
                 println!("{text}");
@@ -322,6 +324,7 @@ fn run_backup(
                 std::fs::read_to_string(&file).with_context(|| format!("reading {file}"))?
             };
             let bundle: serde_json::Value = serde_json::from_str(&text)?;
+            backup::verify_bundle(&bundle).map_err(|e| anyhow::anyhow!("backup rejected: {e}"))?;
             // Accept either the full { tables: {...} } bundle or a bare { table: [rows] } map.
             let tables_val = bundle
                 .get("tables")

@@ -178,6 +178,13 @@ impl PkiState {
         ca.sign_crl(&revoked, number, 7)
     }
 
+    /// Sign arbitrary bytes with the local CA key (ECDSA P-256), if a CA is configured.
+    #[must_use]
+    pub fn sign_data(&self, data: &[u8]) -> Option<Vec<u8>> {
+        let ca = self.ca.lock().ok()?.clone()?;
+        pesit_pki::sign::sign_bytes(&ca, data).ok()
+    }
+
     /// Answer an OCSP request (DER) about certificates issued by the local CA; returns the
     /// DER-encoded, CA-signed OCSP response.
     pub fn ocsp_respond(&self, request_der: &[u8]) -> Result<Vec<u8>, pesit_pki::PkiError> {
