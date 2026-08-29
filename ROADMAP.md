@@ -42,7 +42,9 @@ Replaces the enterprise `pki` + admin CA/certificate features. See
   keystores within `PESIT_CERT_ROTATION_DAYS` of expiry. ✔
 - Revocation: `POST /api/v1/certificates/revoked` revokes a serial and `GET /api/v1/certificates/crl`
   returns a CRL signed by the local CA. ✔
-- Later: an online OCSP responder.
+- **Online OCSP responder** (RFC 6960) at `/ocsp` (POST and GET, unauthenticated): answers the
+  revocation status of certificates issued by the local CA, signed by the CA key. Validated with
+  `openssl ocsp` (`Response verify OK`, `good` → `revoked` after revocation). ✔
 
 ### 2. Audit log — *done*
 

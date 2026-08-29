@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use pesit_app::http::ApiError;
@@ -175,6 +176,28 @@ impl PkiState {
             .collect();
         let number = self.doc.next_counter("crl_number").unwrap_or(1);
         ca.sign_crl(&revoked, number, 7)
+    }
+
+    /// Answer an OCSP request (DER) about certificates issued by the local CA; returns the
+    /// DER-encoded, CA-signed OCSP response.
+    pub fn ocsp_respond(&self, request_der: &[u8]) -> Result<Vec<u8>, pesit_pki::PkiError> {
+        let ca = self
+            .ca
+            .lock()
+            .map_err(|_| pesit_pki::PkiError::Gen("CA lock poisoned".into()))?
+            .clone()
+            .ok_or(pesit_pki::PkiError::NoCa)?;
+        let revoked: Vec<pesit_pki::ocsp::Revoked> = self
+            .revoked_list()
+            .into_iter()
+            .map(|e| pesit_pki::ocsp::Revoked {
+                revoked_at_unix: pesit_app::time::parse_millis(&e.revoked_at)
+                    .map_or(0, |ms| ms / 1000),
+                serial_hex: e.serial,
+            })
+            .collect();
+        let now = pesit_app::time::now_millis() / 1000;
+        pesit_pki::ocsp::respond(&ca, &revoked, request_der, now)
     }
 
     /// Names of keystores whose certificate expires within `days`.
@@ -361,6 +384,48 @@ pub fn routes() -> Router<Arc<App>> {
             "/api/v1/certificates/keystores/{name}/rotate",
             post(rotate_keystore),
         )
+}
+
+/// Open OCSP responder routes. These are merged into the router *outside* the API-key layer,
+/// because OCSP clients are unauthenticated. Serves the local CA's revocation status (RFC 6960).
+pub fn ocsp_routes() -> Router<Arc<App>> {
+    Router::new()
+        .route("/ocsp", post(ocsp_post))
+        .route("/ocsp/{req}", get(ocsp_get))
+}
+
+async fn ocsp_post(State(app): State<Arc<App>>, body: axum::body::Bytes) -> Response {
+    ocsp_reply(&app, &body)
+}
+
+async fn ocsp_get(State(app): State<Arc<App>>, Path(req): Path<String>) -> Response {
+    use base64::Engine;
+    // OCSP-over-GET carries the base64 of the DER request (percent-decoding done by the router).
+    match base64::engine::general_purpose::STANDARD.decode(req.as_bytes()) {
+        Ok(der) => ocsp_reply(&app, &der),
+        Err(_) => (StatusCode::BAD_REQUEST, "invalid base64 OCSP request").into_response(),
+    }
+}
+
+fn ocsp_reply(app: &App, request_der: &[u8]) -> Response {
+    let Some(pki) = app.pki.as_deref() else {
+        return (
+            StatusCode::NOT_FOUND,
+            "certificate management is not enabled",
+        )
+            .into_response();
+    };
+    match pki.ocsp_respond(request_der) {
+        Ok(der) => (
+            [(
+                axum::http::header::CONTENT_TYPE,
+                "application/ocsp-response",
+            )],
+            der,
+        )
+            .into_response(),
+        Err(e) => (StatusCode::SERVICE_UNAVAILABLE, e.to_string()).into_response(),
+    }
 }
 
 fn pki(app: &App) -> Result<&PkiState, ApiError> {

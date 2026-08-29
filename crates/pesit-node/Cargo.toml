@@ -38,6 +38,7 @@ rusqlite.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 cron = "0.17"
+base64 = "0.22"
 
 [dev-dependencies]
 tempfile.workspace = true

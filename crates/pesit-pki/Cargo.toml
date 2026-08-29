@@ -19,8 +19,13 @@ time.workspace = true
 reqwest.workspace = true
 sha2.workspace = true
 tokio.workspace = true
+x509-ocsp = { version = "0.2.1", features = ["builder"] }
+x509-cert = { version = "0.2.5", features = ["pem"] }
+der = { version = "0.7", features = ["std"] }
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
 
 [dev-dependencies]
+sha1 = { version = "0.10", features = ["oid"] }
 tempfile.workspace = true
 
 [lints]

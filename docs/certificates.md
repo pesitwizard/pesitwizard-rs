@@ -80,6 +80,21 @@ that expire within that many days.
 signed by the local CA. The Certificates tab exposes a Rotate button per keystore and a revocation
 panel with a CRL download.
 
+## OCSP responder
+
+An online OCSP responder (RFC 6960) is served at **`/ocsp`** — both `POST` (the DER request as the
+body) and `GET /ocsp/<base64-request>`. It is **unauthenticated** (OCSP clients do not send the API
+key), so it sits outside the admin API-key layer. For every certificate serial in the request it
+answers `good` or `revoked` (looking the serial up in the revocation list above), and the response is
+signed by the local CA key. Point a certificate's Authority Information Access OCSP URL at this
+endpoint.
+
+```console
+$ openssl ocsp -issuer ca.pem -cert leaf.pem -url http://node:8080/ocsp -CAfile ca.pem
+Response verify OK
+leaf.pem: good
+```
+
 ## Integration test
 
 `make vault-test` runs an end-to-end test against a dev-mode Vault in Docker: it enables Vault's PKI
