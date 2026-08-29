@@ -16,7 +16,7 @@ use serde_json::{json, Value};
 use crate::api::App;
 
 /// Store tables carried in a backup (configuration only — not transfer records).
-pub const CONFIG_TABLES: [&str; 8] = [
+pub const CONFIG_TABLES: [&str; 9] = [
     "partners",
     "virtual_files",
     "remote_partners",
@@ -24,11 +24,12 @@ pub const CONFIG_TABLES: [&str; 8] = [
     "remote_servers",
     "client_partners",
     "connectors",
+    "schedules",
     "pki",
 ];
 
 /// Shared-policy tables replicated live across the cluster (listeners stay node-local).
-pub const CLUSTER_TABLES: [&str; 3] = ["partners", "virtual_files", "remote_partners"];
+pub const CLUSTER_TABLES: [&str; 4] = ["partners", "virtual_files", "remote_partners", "schedules"];
 
 /// Backup routes (merged into the admin router).
 pub fn routes() -> Router<Arc<App>> {

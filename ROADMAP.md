@@ -71,10 +71,11 @@ Replaces the enterprise JGroups cluster module with a Rust-native design (`async
   a joining node catches up by requesting a full snapshot from a peer. ✔
 - Cluster-wide transfer history: `GET /api/v1/cluster/transfers` aggregates every member's records
   (shown in the Cluster web UI tab). ✔
-- **Scheduled transfers** driven by the leader: recurring send / receive jobs (`/api/v1/schedules`,
-  Schedules web UI tab) fired only on the cluster leader so each job runs once. Each job runs on a
-  fixed interval or a **cron expression** (5, 6 or 7 fields; `cron` field / UI input). ✔
-- Later: richer work distribution across the cluster.
+- **Scheduled transfers**: recurring send / receive jobs (`/api/v1/schedules`, Schedules web UI tab),
+  each on a fixed interval or a **cron expression** (5, 6 or 7 fields; `cron` field / UI input). ✔
+- Schedules replicate across the cluster (live + snapshot catch-up) and are distributed by ownership
+  (each node owns a deterministic slice by schedule id), so a due job fires exactly once and the load
+  spreads; the new next-run time is replicated for failover. A standalone node owns everything. ✔
 
 ### 5. Storage connectors — *done*
 

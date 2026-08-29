@@ -1,5 +1,5 @@
-//! Scheduled transfers: recurring send / receive jobs, driven by the cluster leader (or always,
-//! when the node runs standalone), so a job fires once across the cluster.
+//! Scheduled transfers: recurring send / receive jobs, distributed across live cluster members
+//! (each node owns a deterministic slice by schedule id), so a job fires exactly once cluster-wide.
 
 use std::sync::Arc;
 use std::time::Duration;
@@ -149,6 +149,7 @@ async fn create(
     s.updated_at = Some(now_iso());
     s.next_run_ms = next_run_after(&s, now_millis());
     app.store.put(TABLE, &s.id, &s)?;
+    crate::cluster::publish(&app, "put", TABLE, &s.id, serde_json::to_value(&s).ok()).await;
     app.audit.success("schedule", "create", &s.name);
     Ok((StatusCode::CREATED, Json(s)))
 }
@@ -175,6 +176,7 @@ async fn update(
         s.next_run_ms = next_run_after(&s, now_millis());
     }
     app.store.put(TABLE, &id, &s)?;
+    crate::cluster::publish(&app, "put", TABLE, &id, serde_json::to_value(&s).ok()).await;
     Ok(Json(s))
 }
 
@@ -183,6 +185,7 @@ async fn delete(
     Path(id): Path<String>,
 ) -> Result<StatusCode, ApiError> {
     if app.store.delete(TABLE, &id)? {
+        crate::cluster::publish(&app, "delete", TABLE, &id, None).await;
         app.audit.success("schedule", "delete", &id);
         Ok(StatusCode::NO_CONTENT)
     } else {
@@ -218,7 +221,7 @@ fn trigger(engine: &Arc<Engine>, s: &ScheduledTransfer) -> String {
     }
 }
 
-/// Spawn the scheduler loop. It only fires on the cluster leader (or always when standalone).
+/// Spawn the scheduler loop. Schedules are distributed across live cluster members by ownership,
 pub fn spawn(
     store: Arc<JsonStore>,
     engine: Arc<Engine>,
@@ -230,13 +233,24 @@ pub fn spawn(
         let mut tick = tokio::time::interval(Duration::from_secs(5));
         loop {
             tick.tick().await;
-            if cluster.as_ref().is_some_and(|c| !c.is_leader()) {
-                continue;
-            }
+            // Distribute schedules across live cluster members: each node owns a deterministic
+            // slice by schedule id, so a due job fires exactly once and the load spreads. A
+            // standalone node owns everything.
+            let (my_index, member_count) = match cluster.as_ref() {
+                Some(c) => {
+                    let mut ids: Vec<String> =
+                        c.members().await.into_iter().map(|m| m.node_id).collect();
+                    ids.sort();
+                    let idx = ids.iter().position(|id| id == c.node_id()).unwrap_or(0);
+                    (idx, ids.len().max(1))
+                }
+                None => (0, 1),
+            };
             let now = now_millis();
             let schedules: Vec<ScheduledTransfer> = store.list(TABLE).unwrap_or_default();
             for mut s in schedules {
-                if !s.enabled || s.next_run_ms > now {
+                if !s.enabled || s.next_run_ms > now || owner_index(&s.id, member_count) != my_index
+                {
                     continue;
                 }
                 let outcome = trigger(&engine, &s);
@@ -261,9 +275,27 @@ pub fn spawn(
                 if let Err(e) = store.put(TABLE, &s.id, &s) {
                     tracing::warn!("cannot persist schedule '{}': {e}", s.id);
                 }
+                // Replicate the new next-run time so peers stay consistent for failover.
+                if let Some(c) = cluster.as_ref() {
+                    c.publish_config("put", TABLE, &s.id, serde_json::to_value(&s).ok())
+                        .await;
+                }
             }
         }
     });
+}
+
+/// Deterministic owner slot for a schedule among `member_count` sorted members (FNV-1a of the id).
+fn owner_index(schedule_id: &str, member_count: usize) -> usize {
+    if member_count <= 1 {
+        return 0;
+    }
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in schedule_id.bytes() {
+        hash ^= u64::from(b);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    (hash % member_count as u64) as usize
 }
 
 #[cfg(test)]
@@ -326,5 +358,22 @@ mod tests {
             ..ScheduledTransfer::default()
         };
         assert_eq!(next_run_after(&interval, from), from + 900 * 1000);
+    }
+
+    #[test]
+    fn owner_index_distributes_deterministically() {
+        // Deterministic and single-member ownership.
+        assert_eq!(owner_index("abc", 3), owner_index("abc", 3));
+        assert_eq!(owner_index("anything", 1), 0);
+        assert_eq!(owner_index("x", 0), 0);
+        // Across many ids every slot of a 3-node cluster is used.
+        let mut slots = [0usize; 3];
+        for i in 0..300 {
+            slots[owner_index(&format!("sched-{i}"), 3)] += 1;
+        }
+        assert!(
+            slots.iter().all(|&c| c > 0),
+            "every node should own some schedules: {slots:?}"
+        );
     }
 }
