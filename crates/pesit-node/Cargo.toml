@@ -37,6 +37,7 @@ clap.workspace = true
 rusqlite.workspace = true
 uuid.workspace = true
 chrono.workspace = true
+cron = "0.17"
 
 [dev-dependencies]
 tempfile.workspace = true

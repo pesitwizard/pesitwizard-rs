@@ -279,7 +279,7 @@ async function renderSchedules(quiet){
   const [list,remotes]=await Promise.all([api('/schedules'),capi('/servers')]);
   const rows=list.length?list.map(s=>`<tr><td class="mono">${esc(s.name)}${s.enabled?'':' <span class="pill mut">disabled</span>'}</td>
      <td>${dirpill((s.direction||'send').toUpperCase())}</td><td class="mono">${esc(s.request&&(s.request.remoteFilename||s.request.filename)||'—')}</td>
-     <td class="mono">every ${s.intervalSeconds}s</td><td class="muted nowrap">${s.lastRun?ago(s.lastRun):'—'}</td>
+     <td class="mono">${s.cron?esc(s.cron):'every '+s.intervalSeconds+'s'}</td><td class="muted nowrap">${s.lastRun?ago(s.lastRun):'—'}</td>
      <td class="muted">${esc(s.lastStatus||'')}</td>
      <td class="nowrap row"><button class="btn sm" onclick="runSched('${esc(s.id)}')">Run now</button><button class="btn sm danger" onclick="delSched('${esc(s.id)}')">✕</button></td></tr>`).join(''):emptyRow(7,'No schedule yet');
   if(quiet&&$('#schBody')){$('#schBody').innerHTML=rows;return;}
@@ -292,6 +292,7 @@ async function renderSchedules(quiet){
      <label class="f">Name<input name="name" required placeholder="Nightly push"></label>
      <label class="f">Direction<select name="direction"><option value="send">Send</option><option value="receive">Receive</option></select></label>
      <label class="f">Interval (seconds)<input name="intervalSeconds" type="number" value="3600"></label>
+     <label class="f">Cron (optional, overrides interval)<input name="cron" placeholder="0 2 * * *  ·  daily 02:00"></label>
      <label class="f">Server<select name="server" required>${opts||'<option value="">— no remote server —</option>'}</select></label>
      <label class="f">Partner ID<input name="partnerId" placeholder="PWSRV01"></label>
      <label class="f">Local file<input name="filename" placeholder="/data/send/file.dat"></label>
@@ -302,7 +303,7 @@ async function renderSchedules(quiet){
 }
 async function createSched(f){const d=formObj(f);const iv=+d.intervalSeconds;
   const req={server:d.server,partnerId:d.partnerId,filename:d.filename,remoteFilename:d.remoteFilename,syncPointsEnabled:!!d.syncPointsEnabled};
-  const body={name:d.name,direction:d.direction,intervalSeconds:iv,enabled:true,request:req};
+  const body={name:d.name,direction:d.direction,intervalSeconds:iv,enabled:true,request:req};if(d.cron)body.cron=d.cron;
   try{await api('/schedules',{method:'POST',body:JSON.stringify(body)});toast('Schedule created',d.name,'ok');renderSchedules()}catch(e){toast('Create failed',e.message,'err')}}
 async function runSched(id){try{const r=await api('/schedules/'+encodeURIComponent(id)+'/run',{method:'POST'});toast('Schedule run',r.status,'ok');renderSchedules()}catch(e){toast('Run failed',e.message,'err')}}
 async function delSched(id){if(!confirm('Delete schedule?'))return;try{await api('/schedules/'+encodeURIComponent(id),{method:'DELETE'});toast('Deleted','','ok');renderSchedules()}catch(e){toast('Delete failed',e.message,'err')}}

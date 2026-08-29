@@ -69,8 +69,9 @@ Replaces the enterprise JGroups cluster module with a Rust-native design (`async
 - Cluster-wide transfer history: `GET /api/v1/cluster/transfers` aggregates every member's records
   (shown in the Cluster web UI tab). ✔
 - **Scheduled transfers** driven by the leader: recurring send / receive jobs (`/api/v1/schedules`,
-  Schedules web UI tab) fired only on the cluster leader so each job runs once. ✔
-- Later: cron expressions (interval-based today), and richer work distribution.
+  Schedules web UI tab) fired only on the cluster leader so each job runs once. Each job runs on a
+  fixed interval or a **cron expression** (5, 6 or 7 fields; `cron` field / UI input). ✔
+- Later: richer work distribution across the cluster.
 
 ### 5. Storage connectors — *done*
 

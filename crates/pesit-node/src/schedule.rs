@@ -35,8 +35,10 @@ pub struct ScheduledTransfer {
     pub direction: String,
     /// The transfer to run.
     pub request: TransferRequest,
-    /// Interval between runs, in seconds.
+    /// Interval between runs, in seconds (used when `cron` is unset).
     pub interval_seconds: u64,
+    /// Cron expression (5, 6 or 7 fields); when set it drives the schedule instead of the interval.
+    pub cron: Option<String>,
     /// Last run time (RFC 3339).
     pub last_run: Option<String>,
     /// Outcome of the last run.
@@ -58,6 +60,7 @@ impl Default for ScheduledTransfer {
             direction: "send".into(),
             request: TransferRequest::default(),
             interval_seconds: 3600,
+            cron: None,
             last_run: None,
             last_status: None,
             next_run_ms: 0,
@@ -65,6 +68,38 @@ impl Default for ScheduledTransfer {
             updated_at: None,
         }
     }
+}
+
+/// Normalise a cron expression to the 6/7-field form the parser expects: a bare 5-field
+/// expression (minute hour day month weekday) gets a leading `0` seconds field.
+fn cron_expr(raw: &str) -> String {
+    let raw = raw.trim();
+    if raw.split_whitespace().count() == 5 {
+        format!("0 {raw}")
+    } else {
+        raw.to_owned()
+    }
+}
+
+/// Parse a cron expression, returning a human-readable error on failure.
+fn parse_cron(expr: &str) -> Result<cron::Schedule, String> {
+    use std::str::FromStr;
+    cron::Schedule::from_str(&cron_expr(expr)).map_err(|e| e.to_string())
+}
+
+/// Next run time (epoch millis) after `from_ms`: the next cron occurrence when a valid cron
+/// expression is set, otherwise `from_ms` plus the interval.
+fn next_run_after(s: &ScheduledTransfer, from_ms: i64) -> i64 {
+    if let Some(expr) = s.cron.as_deref().filter(|e| !e.trim().is_empty()) {
+        if let Ok(sched) = parse_cron(expr) {
+            let from =
+                chrono::DateTime::from_timestamp_millis(from_ms).unwrap_or_else(chrono::Utc::now);
+            if let Some(next) = sched.after(&from).next() {
+                return next.timestamp_millis();
+            }
+        }
+    }
+    from_ms + (s.interval_seconds.max(1) as i64) * 1000
 }
 
 /// Schedule routes (merged into the admin router).
@@ -100,14 +135,19 @@ async fn create(
     if s.name.trim().is_empty() {
         return Err(ApiError::bad_request("name is required"));
     }
-    if s.interval_seconds == 0 {
-        return Err(ApiError::bad_request("intervalSeconds must be at least 1"));
+    if let Some(expr) = s.cron.as_deref().filter(|e| !e.trim().is_empty()) {
+        parse_cron(expr)
+            .map_err(|e| ApiError::bad_request(format!("invalid cron expression: {e}")))?;
+    } else if s.interval_seconds == 0 {
+        return Err(ApiError::bad_request(
+            "intervalSeconds must be at least 1, or set a cron expression",
+        ));
     }
     app.store.ensure_table(TABLE)?;
     s.id = uuid::Uuid::new_v4().to_string();
     s.created_at = Some(now_iso());
     s.updated_at = Some(now_iso());
-    s.next_run_ms = now_millis() + (s.interval_seconds as i64) * 1000;
+    s.next_run_ms = next_run_after(&s, now_millis());
     app.store.put(TABLE, &s.id, &s)?;
     app.audit.success("schedule", "create", &s.name);
     Ok((StatusCode::CREATED, Json(s)))
@@ -127,8 +167,12 @@ async fn update(
     s.last_run = existing.last_run;
     s.last_status = existing.last_status;
     s.updated_at = Some(now_iso());
+    if let Some(expr) = s.cron.as_deref().filter(|e| !e.trim().is_empty()) {
+        parse_cron(expr)
+            .map_err(|e| ApiError::bad_request(format!("invalid cron expression: {e}")))?;
+    }
     if s.next_run_ms == 0 {
-        s.next_run_ms = now_millis() + (s.interval_seconds.max(1) as i64) * 1000;
+        s.next_run_ms = next_run_after(&s, now_millis());
     }
     app.store.put(TABLE, &id, &s)?;
     Ok(Json(s))
@@ -212,7 +256,7 @@ pub fn spawn(
                 );
                 s.last_run = Some(now_iso());
                 s.last_status = Some(outcome);
-                s.next_run_ms = now + (s.interval_seconds.max(1) as i64) * 1000;
+                s.next_run_ms = next_run_after(&s, now);
                 s.updated_at = Some(now_iso());
                 if let Err(e) = store.put(TABLE, &s.id, &s) {
                     tracing::warn!("cannot persist schedule '{}': {e}", s.id);
@@ -241,5 +285,46 @@ mod tests {
             ..ScheduledTransfer::default()
         };
         assert!(due.next_run_ms <= now_millis());
+    }
+
+    #[test]
+    fn cron_normalisation_and_next_run() {
+        // A 5-field expression gains a leading seconds field; 6/7 fields are kept.
+        assert_eq!(cron_expr("0 2 * * *"), "0 0 2 * * *");
+        assert_eq!(cron_expr("*/5 * * * * *"), "*/5 * * * * *");
+        assert!(parse_cron("0 2 * * *").is_ok());
+        assert!(parse_cron("clearly not cron").is_err());
+
+        let from = chrono::DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+            .unwrap_or_else(|e| panic!("{e}"))
+            .timestamp_millis();
+
+        // Daily at 02:00 UTC -> next run is 02:00 the same day.
+        let daily = ScheduledTransfer {
+            cron: Some("0 2 * * *".into()),
+            ..ScheduledTransfer::default()
+        };
+        let next = next_run_after(&daily, from);
+        assert_eq!(
+            chrono::DateTime::from_timestamp_millis(next)
+                .unwrap_or_else(|| panic!("bad ms"))
+                .to_rfc3339(),
+            "2026-01-01T02:00:00+00:00"
+        );
+
+        // An invalid cron falls back to the interval.
+        let bad = ScheduledTransfer {
+            cron: Some("bogus".into()),
+            interval_seconds: 60,
+            ..ScheduledTransfer::default()
+        };
+        assert_eq!(next_run_after(&bad, from), from + 60 * 1000);
+
+        // No cron -> interval.
+        let interval = ScheduledTransfer {
+            interval_seconds: 900,
+            ..ScheduledTransfer::default()
+        };
+        assert_eq!(next_run_after(&interval, from), from + 900 * 1000);
     }
 }
