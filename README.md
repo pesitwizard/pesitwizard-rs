@@ -42,6 +42,10 @@ One process exposes two REST surfaces backed by the same store, plus the web UI:
 * **Transfer API** on `--transfer-port` (default 9081): remote servers (`/api/v1/servers`),
   `/api/v1/transfers/send|receive|message`, outbound history, `/{id}/cancel|retry`.
 
+Unauthenticated operational endpoints on the admin port: `/actuator/health` (+ `/liveness`,
+`/readiness`) for Kubernetes probes, `/metrics` for Prometheus (transfers, bytes, listeners, config
+counts), and `/ocsp` for OCSP (see [docs/certificates.md](docs/certificates.md)).
+
 Selected environment / flags: `PESIT_API_PORT`, `PESIT_TRANSFER_PORT`, `PESIT_API_KEY` (unset = no
 auth), `PESIT_DB`, `PESIT_CHECKPOINT_DIR`, `PESIT_CLIENT_CHECKPOINT_DIR`, `PESIT_CLIENT_RECEIVE_DIR`,
 `PESIT_CONFIG` (YAML bootstrap: `partners`, `files`, `remotePartners`, `servers`), `PESIT_NODE_ID`,

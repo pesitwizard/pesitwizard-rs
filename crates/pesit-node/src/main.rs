@@ -16,6 +16,7 @@ mod config;
 mod connector;
 mod handler;
 mod manager;
+mod metrics;
 mod model;
 mod pki;
 mod schedule;

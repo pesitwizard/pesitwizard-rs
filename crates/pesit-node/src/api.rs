@@ -135,8 +135,10 @@ pub fn router(app: Arc<App>) -> Router {
         .layer(middleware::from_fn(move |req, next| {
             require_api_key(key.clone(), req, next)
         }))
-        // OCSP responder is merged after the auth layer: OCSP clients are unauthenticated.
+        // OCSP responder and Prometheus metrics are merged after the auth layer: their clients
+        // (OCSP responders, Prometheus scrapers) are unauthenticated.
         .merge(crate::pki::ocsp_routes())
+        .merge(crate::metrics::routes())
         .layer(tower_http::trace::TraceLayer::new_for_http())
         .with_state(app)
 }
