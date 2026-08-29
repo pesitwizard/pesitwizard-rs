@@ -60,8 +60,11 @@ Replaces the enterprise JGroups cluster module with a Rust-native design (`async
 - Leader election via a KV lease (create-to-acquire, renew, TTL failover). ✔
 - Shared-policy configuration (partners, virtual files, remote partners) replicated live over NATS;
   a joining node catches up by requesting a full snapshot from a peer. ✔
-- Later: transfer-record replication / cluster-wide history, and work distribution for scheduled
-  transfers driven by the leader.
+- Cluster-wide transfer history: `GET /api/v1/cluster/transfers` aggregates every member's records
+  (shown in the Cluster web UI tab). ✔
+- **Scheduled transfers** driven by the leader: recurring send / receive jobs (`/api/v1/schedules`,
+  Schedules web UI tab) fired only on the cluster leader so each job runs once. ✔
+- Later: cron expressions (interval-based today), and richer work distribution.
 
 ## Related
 

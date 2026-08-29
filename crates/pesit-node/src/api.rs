@@ -33,6 +33,8 @@ pub struct App {
     pub audit: std::sync::Arc<pesit_app::audit::AuditLog>,
     /// Cluster membership (None = standalone).
     pub cluster: Option<std::sync::Arc<pesit_cluster::Cluster>>,
+    /// Outbound transfer engine (for scheduled transfers).
+    pub engine: std::sync::Arc<pesit_client::engine::Engine>,
 }
 
 type AppState = State<Arc<App>>;
@@ -116,6 +118,7 @@ pub fn router(app: Arc<App>) -> Router {
         .merge(crate::pki::routes())
         .merge(crate::audit::routes())
         .merge(crate::cluster::routes())
+        .merge(crate::schedule::routes())
         .merge(crate::backup::routes())
         .layer(middleware::from_fn(move |req, next| {
             require_api_key(key.clone(), req, next)

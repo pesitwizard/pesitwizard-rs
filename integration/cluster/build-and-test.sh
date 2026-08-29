@@ -47,7 +47,21 @@ wait_health "$C" || { echo "node-c did not come up"; exit 1; }
 if wait_partner "$C" "CLUSTER_A" && has_partner "$C" "CLUSTER_B"; then ok "late-joining node-c caught up existing configuration via snapshot"; else ko "node-c snapshot catch-up"; fi
 [ "$(h "$C" /api/v1/cluster | jq '.members | length')" = "3" ] && ok "node-c sees three members" || ko "three members"
 
-echo "6. Deletion propagates..."
+echo "6. Cluster-wide transfer history..."
+# a loopback transfer on node-a, then check node-b's aggregated view sees it
+h "$A" /api/v1/config/files -X POST -d '{"id":"CLFILE","enabled":true,"direction":"RECEIVE","receiveDirectory":"/data/received","receiveFilenamePattern":"cl_${transferId}","overwrite":true,"recordLength":4096,"recordFormat":128}' >/dev/null
+h "$A" /api/v1/servers -X POST -d '{"serverId":"LOOP","port":5052,"receiveDirectory":"/data/received","sendDirectory":"/data/send","maxEntitySize":32768,"syncPointsEnabled":true,"autoStart":true}' >/dev/null
+h "$A" /api/v1/config/partners -X POST -d '{"id":"node-a","enabled":true,"accessType":"BOTH"}' >/dev/null
+sleep 1
+curl -s -H 'Content-Type: application/json' -X POST http://localhost:8090/client/api/v1/servers -d '{"name":"self","host":"127.0.0.1","port":5052,"serverId":"LOOP","enabled":true}' >/dev/null
+docker exec node-a sh -c 'head -c 100000 /dev/urandom > /data/send/clx.dat' 2>/dev/null
+TID=$(curl -s -H 'Content-Type: application/json' -X POST http://localhost:8090/client/api/v1/transfers/send -d '{"server":"self","partnerId":"node-a","filename":"/data/send/clx.dat","remoteFilename":"CLFILE"}' | jq -r '.transferId // .id')
+for i in $(seq 1 40); do ST=$(curl -s http://localhost:8090/client/api/v1/transfers/$TID | jq -r .status); [ "$ST" = COMPLETED -o "$ST" = FAILED ] && break; sleep 0.5; done
+echo "   loopback on node-a: $ST"
+FOUND=0; for i in $(seq 1 20); do h "$B" /api/v1/cluster/transfers | jq -e '.[] | select(.node=="node-a")' >/dev/null 2>&1 && { FOUND=1; break; }; sleep 0.5; done
+[ "$FOUND" = 1 ] && ok "node-a's transfer visible in node-b's cluster-wide history" || ko "cluster-wide transfer aggregation"
+
+echo "7. Deletion propagates..."
 h "$A" /api/v1/config/partners/CLUSTER_A -X DELETE >/dev/null
 for i in $(seq 1 30); do has_partner "$B" "CLUSTER_A" || break; sleep 0.5; done
 has_partner "$B" "CLUSTER_A" && ko "deletion propagation" || ok "deletion on node-a propagated to node-b"

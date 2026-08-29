@@ -22,6 +22,7 @@ services:
       - PESIT_CLUSTER_NATS=nats://nats:4222
       - PESIT_CLUSTER_NAME=itest
       - PESIT_NODE_ID=node-a
+      - PESIT_CLUSTER_ADVERTISE=node-a:8080
     ports: ["8090:8080"]
     networks: [cl-net]
     depends_on: { nats: { condition: service_healthy } }
@@ -40,6 +41,7 @@ services:
       - PESIT_CLUSTER_NATS=nats://nats:4222
       - PESIT_CLUSTER_NAME=itest
       - PESIT_NODE_ID=node-b
+      - PESIT_CLUSTER_ADVERTISE=node-b:8080
     ports: ["8091:8080"]
     networks: [cl-net]
     depends_on: { nats: { condition: service_healthy } }
@@ -54,6 +56,7 @@ services:
       - PESIT_CLUSTER_NATS=nats://nats:4222
       - PESIT_CLUSTER_NAME=itest
       - PESIT_NODE_ID=node-c
+      - PESIT_CLUSTER_ADVERTISE=node-c:8080
     ports: ["8092:8080"]
     networks: [cl-net]
     depends_on: { nats: { condition: service_healthy } }

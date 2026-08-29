@@ -13,6 +13,12 @@ run more than one cluster against the same NATS, `PESIT_CLUSTER_NAME`. Implement
 * **Leader election** — a KV lease (`pesit_<name>_leader`): a node acquires the `leader` key with a
   create (atomic), renews it while alive, and the TTL lets another node take over on failure. This is
   the hook for future leader-driven work (scheduled transfers).
+* **Cluster-wide transfer history** — `GET /api/v1/cluster/transfers` aggregates the transfer records
+  of every member (each node must advertise a reachable address via `PESIT_CLUSTER_ADVERTISE`,
+  `host:port` of its admin API). Shown in the Cluster web UI tab.
+* **Scheduled transfers** — recurring send / receive jobs (`/api/v1/schedules`, Schedules web UI tab)
+  are evaluated on every node but only fire on the current leader, so a job runs once across the
+  cluster. Standalone nodes run their schedules directly.
 * **Configuration replication** — a change to a shared-policy object (partners, virtual files, remote
   partners) is published on `pesit.<name>.config` and applied by every other node. A joining node
   first requests a full snapshot on `pesit.<name>.sync` from a peer and restores it, then follows the

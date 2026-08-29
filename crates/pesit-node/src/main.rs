@@ -17,6 +17,7 @@ mod handler;
 mod manager;
 mod model;
 mod pki;
+mod schedule;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -268,7 +269,13 @@ async fn serve(
             url,
             name: opts.cluster_name.clone(),
             node_id: opts.node_id.clone(),
-            node_addr: format!("{}:{}", opts.api_bind, opts.api_port),
+            node_addr: opts.advertise_addr.clone().unwrap_or_else(|| {
+                let host = std::env::var("HOSTNAME")
+                    .ok()
+                    .filter(|h| !h.is_empty())
+                    .unwrap_or_else(|| opts.api_bind.clone());
+                format!("{host}:{}", opts.api_port)
+            }),
             version: env!("CARGO_PKG_VERSION").to_owned(),
             heartbeat: std::time::Duration::from_secs(5),
         };
@@ -300,6 +307,12 @@ async fn serve(
         },
     ));
     manager.start_auto().await;
+    schedule::spawn(
+        Arc::clone(&store),
+        Arc::clone(&engine),
+        cluster.clone(),
+        Arc::clone(&audit),
+    );
 
     let api_key = if opts.security_enabled {
         opts.api_key
@@ -320,6 +333,7 @@ async fn serve(
         pki,
         audit: Arc::clone(&audit),
         cluster: cluster.clone(),
+        engine: Arc::clone(&engine),
     });
     let client_app = Arc::new(pesit_client::api::App {
         store: Arc::clone(&store),

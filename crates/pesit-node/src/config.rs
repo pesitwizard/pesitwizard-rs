@@ -112,6 +112,9 @@ pub struct NodeOptions {
         global = true
     )]
     pub cluster_name: String,
+    /// Address other nodes use to reach this node's admin API (host:port). Defaults to $HOSTNAME:api_port.
+    #[arg(long, env = "PESIT_CLUSTER_ADVERTISE", global = true)]
+    pub advertise_addr: Option<String>,
     /// Default synchronisation interval (KB) for outbound transfers.
     #[arg(
         long,

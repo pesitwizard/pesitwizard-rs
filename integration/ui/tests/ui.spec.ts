@@ -169,3 +169,34 @@ test('system: audit records actions and a backup restores deleted configuration'
   await tab(page, 'partners');
   await expect(page.locator('td.mono', { hasText: /^BACKUP_TEST$/ })).toBeVisible();
 });
+
+test('schedules: create a recurring transfer and run it', async ({ page }) => {
+  await open(page);
+  // a remote server is needed for the schedule's server dropdown
+  await tab(page, 'remotes');
+  await page.locator('input[name="name"]').fill('sched-srv');
+  await page.locator('input[name="host"]').fill('127.0.0.1');
+  await page.locator('input[name="port"]').fill('5199');
+  await page.locator('input[name="serverId"]').fill('SCHED');
+  await page.getByRole('button', { name: 'Create remote server' }).click();
+  await expect(page.locator('td.mono', { hasText: /^sched-srv$/ })).toBeVisible();
+
+  const src = path.join(WORK, 'send', 'sched.dat');
+  fs.writeFileSync(src, crypto.randomBytes(1024));
+
+  await tab(page, 'schedules');
+  await page.locator('input[name="name"]').fill('nightly-push');
+  await page.locator('select[name="server"]').selectOption('sched-srv');
+  await page.locator('input[name="partnerId"]').fill('SCHED');
+  await page.locator('input[name="filename"]').fill(src);
+  await page.locator('input[name="remoteFilename"]').fill('PWRECV');
+  await page.locator('input[name="intervalSeconds"]').fill('86400');
+  await page.getByRole('button', { name: 'Create schedule' }).click();
+
+  const row = page.locator('tr', { hasText: 'nightly-push' });
+  await expect(row).toBeVisible();
+  await expect(row).toContainText('every 86400s');
+  // run it now — it queues (the target has no listener, but the run endpoint returns immediately)
+  await row.getByRole('button', { name: 'Run now' }).click();
+  await expect(page.locator('.toast', { hasText: 'Schedule run' })).toBeVisible();
+});

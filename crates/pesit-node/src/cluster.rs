@@ -3,11 +3,12 @@
 
 use std::sync::Arc;
 
-use axum::extract::State;
+use axum::extract::{Query, State};
 use axum::routing::get;
 use axum::{Json, Router};
 use pesit_app::store::JsonStore;
 use pesit_cluster::{ClusterHandler, ConfigChange};
+use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::api::App;
@@ -65,7 +66,9 @@ impl ClusterHandler for NodeClusterHandler {
 
 /// Cluster status routes (merged into the admin router).
 pub fn routes() -> Router<Arc<App>> {
-    Router::new().route("/api/v1/cluster", get(status))
+    Router::new()
+        .route("/api/v1/cluster", get(status))
+        .route("/api/v1/cluster/transfers", get(cluster_transfers))
 }
 
 async fn status(State(app): State<Arc<App>>) -> Json<Value> {
@@ -81,6 +84,84 @@ async fn status(State(app): State<Arc<App>>) -> Json<Value> {
         "leader": leader,
         "members": members,
     }))
+}
+
+/// Query for the cluster-wide transfer history.
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TransfersQuery {
+    limit: Option<usize>,
+}
+
+/// Aggregate the transfer history of every cluster member.
+async fn cluster_transfers(
+    State(app): State<Arc<App>>,
+    Query(q): Query<TransfersQuery>,
+) -> Json<Vec<Value>> {
+    let limit = q.limit.unwrap_or(100);
+    let Some(cluster) = &app.cluster else {
+        return Json(local_transfers(&app, limit));
+    };
+    let members = cluster.members().await;
+    let key = app
+        .api_key
+        .as_ref()
+        .and_then(|h| h.to_str().ok())
+        .map(str::to_owned);
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(3))
+        .build()
+        .unwrap_or_default();
+    let mut out: Vec<Value> = Vec::new();
+    for m in members {
+        for (path, way, with_key) in [
+            ("/api/v1/transfers", "IN", true),
+            ("/client/api/v1/transfers", "OUT", false),
+        ] {
+            let url = format!("http://{}{}?limit={}", m.addr, path, limit);
+            let mut req = client.get(&url);
+            if with_key {
+                if let Some(k) = &key {
+                    req = req.header("x-api-key", k);
+                }
+            }
+            if let Ok(resp) = req.send().await {
+                if let Ok(items) = resp.json::<Vec<Value>>().await {
+                    for mut it in items {
+                        if let Value::Object(map) = &mut it {
+                            map.insert("node".into(), json!(m.node_id));
+                            map.insert("way".into(), json!(way));
+                        }
+                        out.push(it);
+                    }
+                }
+            }
+        }
+    }
+    out.sort_by_key(|b| std::cmp::Reverse(started_at(b)));
+    out.truncate(limit);
+    Json(out)
+}
+
+fn started_at(v: &Value) -> String {
+    v.get("startedAt")
+        .or_else(|| v.get("createdAt"))
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .to_owned()
+}
+
+fn local_transfers(app: &App, limit: usize) -> Vec<Value> {
+    let mut out: Vec<Value> = app
+        .store
+        .list_recent::<Value>("transfers", limit)
+        .unwrap_or_default();
+    for it in &mut out {
+        if let Value::Object(m) = it {
+            m.insert("way".into(), json!("IN"));
+        }
+    }
+    out
 }
 
 /// Publish a configuration change to the cluster, if clustering is enabled.

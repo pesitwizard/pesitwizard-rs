@@ -116,6 +116,7 @@ label.chk input{width:16px;height:16px;accent-color:var(--accent)}
       <button data-tab="remotes"><span class="ic">☁</span>Remote servers</button>
       <button data-tab="send"><span class="ic">⇑</span>Send / Receive</button>
       <button data-tab="certs"><span class="ic">❖</span>Certificates</button>
+      <button data-tab="schedules"><span class="ic">◷</span>Schedules</button>
       <button data-tab="transfers"><span class="ic">⇅</span>Transfers</button>
       <button data-tab="cluster"><span class="ic">⧉</span>Cluster</button>
       <button data-tab="system"><span class="ic">⚙</span>System</button>
@@ -173,6 +174,7 @@ const TABS={
   send:{title:'Send / Receive',sub:'Initiate an outgoing transfer or message',auto:3000,render:renderSend},
   certs:{title:'Certificates',sub:'Keystores, truststores, local CA and Vault PKI',render:renderCerts},
   transfers:{title:'Transfers',sub:'Inbound and outbound records',auto:2500,render:renderTransfers},
+  schedules:{title:'Schedules',sub:'Recurring transfers (fired by the cluster leader)',auto:5000,render:renderSchedules},
   cluster:{title:'Cluster',sub:'NATS / JetStream membership and leader',auto:4000,render:renderCluster},
   system:{title:'System',sub:'Audit log and configuration backup / restore',auto:6000,render:renderSystem},
 };
@@ -259,6 +261,38 @@ async function saveVault(f){const d=formObj(f);const method=d._auth;delete d._au
 async function testVault(){toast('Testing Vault…','');try{const r=await api('/certificates/vault/test',{method:'POST'});toast(r.success?'Vault reachable':'Vault error',r.vaultVersion?('version '+r.vaultVersion):r.message,r.success?'ok':'err')}catch(e){toast('Test failed',e.message,'err')}}
 async function clearVault(){if(!confirm('Remove the Vault configuration?'))return;try{await api('/certificates/vault',{method:'DELETE'});toast('Vault removed','','ok');renderCerts()}catch(e){toast('Failed',e.message,'err')}}
 
+async function renderSchedules(quiet){
+  const [list,remotes]=await Promise.all([api('/schedules'),capi('/servers')]);
+  const rows=list.length?list.map(s=>`<tr><td class="mono">${esc(s.name)}${s.enabled?'':' <span class="pill mut">disabled</span>'}</td>
+     <td>${dirpill((s.direction||'send').toUpperCase())}</td><td class="mono">${esc(s.request&&(s.request.remoteFilename||s.request.filename)||'—')}</td>
+     <td class="mono">every ${s.intervalSeconds}s</td><td class="muted nowrap">${s.lastRun?ago(s.lastRun):'—'}</td>
+     <td class="muted">${esc(s.lastStatus||'')}</td>
+     <td class="nowrap row"><button class="btn sm" onclick="runSched('${esc(s.id)}')">Run now</button><button class="btn sm danger" onclick="delSched('${esc(s.id)}')">✕</button></td></tr>`).join(''):emptyRow(7,'No schedule yet');
+  if(quiet&&$('#schBody')){$('#schBody').innerHTML=rows;return;}
+  const opts=remotes.map(r=>`<option value="${esc(r.name)}"${r.defaultServer?' selected':''}>${esc(r.name)}</option>`).join('');
+  $('#view').innerHTML=`
+   <div class="panel"><div class="panel-h"><h2>Schedules</h2><span class="sub">${list.length} · leader-driven</span></div>
+     <table><thead><tr><th>Name</th><th>Direction</th><th>File</th><th>Interval</th><th>Last run</th><th>Status</th><th></th></tr></thead><tbody id="schBody">${rows}</tbody></table></div>
+   <div class="panel"><div class="panel-h"><h2>New schedule</h2></div>
+   <form class="grid" onsubmit="createSched(this);return false">
+     <label class="f">Name<input name="name" required placeholder="Nightly push"></label>
+     <label class="f">Direction<select name="direction"><option value="send">Send</option><option value="receive">Receive</option></select></label>
+     <label class="f">Interval (seconds)<input name="intervalSeconds" type="number" value="3600"></label>
+     <label class="f">Server<select name="server" required>${opts||'<option value="">— no remote server —</option>'}</select></label>
+     <label class="f">Partner ID<input name="partnerId" placeholder="PWSRV01"></label>
+     <label class="f">Local file<input name="filename" placeholder="/data/send/file.dat"></label>
+     <label class="f">Virtual file<input name="remoteFilename" placeholder="PWRECV"></label>
+     <label class="f chk"><input type="checkbox" name="syncPointsEnabled" checked>Sync points</label>
+     <div class="form-foot"><button class="btn primary" type="submit">Create schedule</button></div>
+   </form></div>`;
+}
+async function createSched(f){const d=formObj(f);const iv=+d.intervalSeconds;
+  const req={server:d.server,partnerId:d.partnerId,filename:d.filename,remoteFilename:d.remoteFilename,syncPointsEnabled:!!d.syncPointsEnabled};
+  const body={name:d.name,direction:d.direction,intervalSeconds:iv,enabled:true,request:req};
+  try{await api('/schedules',{method:'POST',body:JSON.stringify(body)});toast('Schedule created',d.name,'ok');renderSchedules()}catch(e){toast('Create failed',e.message,'err')}}
+async function runSched(id){try{const r=await api('/schedules/'+encodeURIComponent(id)+'/run',{method:'POST'});toast('Schedule run',r.status,'ok');renderSchedules()}catch(e){toast('Run failed',e.message,'err')}}
+async function delSched(id){if(!confirm('Delete schedule?'))return;try{await api('/schedules/'+encodeURIComponent(id),{method:'DELETE'});toast('Deleted','','ok');renderSchedules()}catch(e){toast('Delete failed',e.message,'err')}}
+
 async function renderCluster(quiet){
   const c=await api('/cluster');
   if(!c.enabled){$('#view').innerHTML=`<div class="panel"><div class="empty"><div class="big">⧉</div>Standalone node — set <span class="mono">PESIT_CLUSTER_NATS</span> to join a NATS/JetStream cluster.<br>Configuration then replicates across nodes, with membership and leader election.</div></div>`;return;}
@@ -271,7 +305,15 @@ async function renderCluster(quiet){
      <div class="stat"><div class="n" style="font-size:20px">${esc(c.nodeId)}</div><div class="l">This node ${c.isLeader?'(leader)':''}</div></div>
    </div>
    <div class="panel"><div class="panel-h"><h2>Members</h2><span class="sub">live · heartbeats</span></div>
-     <table><thead><tr><th>Node</th><th>Admin address</th><th>Version</th></tr></thead><tbody id="memBody">${rows}</tbody></table></div>`;
+     <table><thead><tr><th>Node</th><th>Admin address</th><th>Version</th></tr></thead><tbody id="memBody">${rows}</tbody></table></div>
+   <div class="panel"><div class="panel-h"><h2>Cluster-wide transfers</h2><span class="sub">aggregated from all nodes</span></div>
+     <table><thead><tr><th>Node</th><th>Way</th><th>Status</th><th>Peer</th><th>File</th><th>When</th></tr></thead><tbody id="clTx"></tbody></table></div>`;
+  renderClusterTransfers();
+}
+async function renderClusterTransfers(){
+  try{const ts=await api('/cluster/transfers?limit=60');
+    $('#clTx').innerHTML=ts.length?ts.map(t=>`<tr><td class="mono">${esc(t.node||'—')}</td><td><span class="pill ${t.way==='IN'?'info':'mut'}">${esc(t.way||'')}</span></td><td>${badge(t.status)}</td><td class="mono">${esc(t.partnerId||t.serverName||'—')}</td><td class="mono">${esc(t.filename||t.remoteFilename||t.localFilename||'—')}</td><td class="muted nowrap">${ago(t.startedAt||t.createdAt)}</td></tr>`).join(''):emptyRow(6,'No transfers across the cluster');
+  }catch(e){if($('#clTx'))$('#clTx').innerHTML=emptyRow(6,e.message);}
 }
 
 async function renderSystem(quiet){
