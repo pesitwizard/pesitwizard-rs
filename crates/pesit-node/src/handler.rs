@@ -542,7 +542,8 @@ impl ServerHandler for PwHandler {
             (path, restart)
         };
         let sink = FileSink::create(&path, vf.record_format(), restart.map(position_of))
-            .map_err(|e| io_refusal(&e, "cannot create file"))?;
+            .map_err(|e| io_refusal(&e, "cannot create file"))?
+            .with_ebcdic(file.data_code == Some(1) || vf.is_ebcdic());
         let mut record = self.new_record(
             session,
             TransferDirection::Receive,
@@ -625,7 +626,8 @@ impl ServerHandler for PwHandler {
         let meta =
             std::fs::metadata(&path).map_err(|e| io_refusal(&e, &path.display().to_string()))?;
         let source = FileSource::open(&path, vf.record_format(), vf.record_length as usize)
-            .map_err(|e| io_refusal(&e, "cannot open file"))?;
+            .map_err(|e| io_refusal(&e, "cannot open file"))?
+            .with_ebcdic(vf.is_ebcdic());
         let key = Self::restart_key(session, file, tid);
         let mut checkpoints = self
             .checkpoints(&key)
@@ -646,6 +648,9 @@ impl ServerHandler for PwHandler {
             ArticleFormat::Fixed
         };
         spec.article_length = vf.record_length.min(0xFFFF) as u16;
+        if vf.is_ebcdic() {
+            spec.data_code = Some(1);
+        }
         spec.organisation = Some(0);
         spec.max_reservation = meta.len().div_ceil(1024);
         spec.reservation_unit = Some(0);

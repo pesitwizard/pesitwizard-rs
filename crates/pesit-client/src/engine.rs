@@ -430,6 +430,7 @@ impl Engine {
             reservation_unit: size.map(|_| 0),
             max_reservation: size.map_or(0, |s| s.div_ceil(1024)),
             creation_date: Some(pesit_now()),
+            data_code: req.ebcdic.unwrap_or(false).then_some(1),
             ..FileSpec::default()
         }
     }
@@ -547,7 +548,8 @@ impl Engine {
             Path::new(&local),
             Self::record_format(req),
             req.record_length.unwrap_or(self.settings.record_length) as usize,
-        )?;
+        )?
+        .with_ebcdic(req.ebcdic.unwrap_or(false));
         let cancel = self.register_cancel(&history.id);
         let (checkpoints_id, restart) = match resume {
             Some(prev) => {
@@ -659,7 +661,8 @@ impl Engine {
                 data_bytes: c.data_bytes,
                 articles: c.articles,
             }),
-        )?;
+        )?
+        .with_ebcdic(req.ebcdic.unwrap_or(false));
         let pesit_id = if restart.is_some() {
             history.pesit_transfer_id
         } else {

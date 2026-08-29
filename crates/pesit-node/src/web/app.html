@@ -452,6 +452,7 @@ async function renderFiles(){
      <label class="f">Connector<select name="connector"><option value="">— local filesystem —</option>${conns.map(c=>`<option value="${esc(c.id)}">${esc(c.id)} (${esc(c.type)})</option>`).join('')}</select></label>
      <label class="f">Connector path<input name="connectorPath" placeholder="${'incoming/${transferId}.dat'}"></label>
      <label class="f chk"><input type="checkbox" name="text">Text mode</label>
+     <label class="f chk"><input type="checkbox" name="ebcdic">EBCDIC</label>
      <label class="f chk"><input type="checkbox" name="overwrite">Overwrite</label>
      <div class="form-foot"><button class="btn primary" type="submit">Create virtual file</button></div>
    </form></div>`;
@@ -543,6 +544,7 @@ async function renderSend(quiet){
        <label class="f chk _opt"><input type="checkbox" name="syncPointsEnabled" checked>Sync points</label>
        <label class="f chk _opt _send"><input type="checkbox" name="compressionEnabled">Compress</label>
        <label class="f chk _opt _send"><input type="checkbox" name="text">Text mode</label>
+       <label class="f chk _opt _send"><input type="checkbox" name="ebcdic">EBCDIC</label>
        <label class="f chk _msg hide"><input type="checkbox" name="expectsReply">Expect reply</label>
        <div class="form-foot"><button class="btn primary" type="submit" id="sendBtn">Start transfer</button></div>
      </form></div>

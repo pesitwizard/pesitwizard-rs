@@ -146,6 +146,8 @@ pub struct TransferRequest {
     pub record_length: Option<u32>,
     /// Text mode (lines instead of binary chunks).
     pub text: Option<bool>,
+    /// EBCDIC data code (PI 16 = 1): translate article bytes ASCII/Latin-1 ↔ EBCDIC CP037.
+    pub ebcdic: Option<bool>,
     /// CRC option.
     pub crc_enabled: Option<bool>,
     /// Maximum entity size (PI 25).

@@ -145,6 +145,8 @@ pub struct VirtualFile {
     pub record_format: u32,
     /// Text mode: articles are lines (LF stripped/added) instead of binary chunks.
     pub text: bool,
+    /// EBCDIC data code (PI 16 = 1): translate article bytes ASCII/Latin-1 ↔ EBCDIC CP037.
+    pub ebcdic: bool,
     /// Storage connector id (None = local filesystem via receiveDirectory / sendFile).
     pub connector: Option<String>,
     /// Path / key within the connector.
@@ -171,6 +173,7 @@ impl Default for VirtualFile {
             record_length: 1024,
             record_format: 0x80,
             text: false,
+            ebcdic: false,
             connector: None,
             connector_path: None,
             created_at: None,
@@ -203,6 +206,12 @@ impl VirtualFile {
             (false, true) => RecordFormat::Bu,
             (false, false) => RecordFormat::Bf,
         }
+    }
+
+    /// Whether the file data is exchanged in EBCDIC (PI 16 = 1).
+    #[must_use]
+    pub const fn is_ebcdic(&self) -> bool {
+        self.ebcdic
     }
 }
 

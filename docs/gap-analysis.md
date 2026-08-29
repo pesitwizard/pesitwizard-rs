@@ -73,7 +73,7 @@ can break exchanges with C:X in some configuration; **[spec]** = missing protoco
 | 13 | TLS framing | Done — `tcpipHeader` flag (listener and client server entry) instead of the `auto` mode |
 | 14 | Extra PIs | Partial — `FileSpec` carries PI 16/37/61/62/99 and the server returns labels/dates; the REST transfer requests do not expose them yet |
 | 15 | State machine | Done — the 54 C:X states as data, shared by both roles |
-| 16 | ASCII/EBCDIC translation | Not done — CP037 tables exist (pre-connection) but no article codec option yet |
+| 16 | ASCII/EBCDIC translation | Done — `ebcdic` option on virtual files / client requests translates article bytes Latin-1 ↔ EBCDIC CP037 and sets PI 16 = 1; the responder honours an incoming PI 16. Verified PW↔PW (a file sent as EBCDIC is received byte-for-byte as EBCDIC without the flag, and back to the original with it) |
 | 17 | Clean cancellation | Done — IDT with end code 12/16 then CRF/DESELECT/RELEASE |
 
 Validated against Connect:Express 1.5 in Docker (`integration/cx/`), all suites green:

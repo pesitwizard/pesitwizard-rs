@@ -57,6 +57,7 @@ pub struct FileSource {
     file_pos: u64,
     eof: bool,
     size: u64,
+    ebcdic: bool,
 }
 
 impl FileSource {
@@ -73,7 +74,15 @@ impl FileSource {
             file_pos: 0,
             eof: false,
             size,
+            ebcdic: false,
         })
+    }
+
+    /// Translate each article from Latin-1 to EBCDIC (CP037) before it goes on the wire (PI 16 = 1).
+    #[must_use]
+    pub fn with_ebcdic(mut self, ebcdic: bool) -> Self {
+        self.ebcdic = ebcdic;
+        self
     }
 
     fn fill(&mut self) -> io::Result<bool> {
@@ -93,7 +102,7 @@ impl FileSource {
 impl ArticleSource for FileSource {
     fn next_article(&mut self) -> io::Result<Option<Vec<u8>>> {
         loop {
-            if let Some(a) = self
+            if let Some(mut a) = self
                 .cutter
                 .next_article()
                 .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?
@@ -101,17 +110,23 @@ impl ArticleSource for FileSource {
                 self.pos.articles += 1;
                 self.pos.data_bytes += a.len() as u64;
                 self.pos.file_offset = self.file_pos - self.cutter.buffered() as u64;
+                if self.ebcdic {
+                    pesit_core::ebcdic::to_ebcdic(&mut a);
+                }
                 return Ok(Some(a));
             }
             if self.eof {
-                let last = self
+                let mut last = self
                     .cutter
                     .finish()
                     .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-                if let Some(a) = &last {
+                if let Some(a) = &mut last {
                     self.pos.articles += 1;
                     self.pos.data_bytes += a.len() as u64;
                     self.pos.file_offset = self.file_pos;
+                    if self.ebcdic {
+                        pesit_core::ebcdic::to_ebcdic(a);
+                    }
                 }
                 return Ok(last);
             }
@@ -145,6 +160,7 @@ pub struct FileSink {
     format: RecordFormat,
     pos: Position,
     finished: bool,
+    ebcdic: bool,
 }
 
 impl FileSink {
@@ -180,7 +196,15 @@ impl FileSink {
             format,
             pos,
             finished: false,
+            ebcdic: false,
         })
+    }
+
+    /// Translate each received article from EBCDIC (CP037) to Latin-1 before writing it (PI 16 = 1).
+    #[must_use]
+    pub fn with_ebcdic(mut self, ebcdic: bool) -> Self {
+        self.ebcdic = ebcdic;
+        self
     }
 
     /// Final path of the file.
@@ -213,6 +237,15 @@ pub fn part_path(path: &Path) -> PathBuf {
 
 impl ArticleSink for FileSink {
     fn write_article(&mut self, article: &[u8]) -> io::Result<()> {
+        let translated;
+        let article = if self.ebcdic {
+            let mut a = article.to_vec();
+            pesit_core::ebcdic::to_latin1(&mut a);
+            translated = a;
+            translated.as_slice()
+        } else {
+            article
+        };
         let bytes = article_to_bytes(self.format, article);
         self.writer.write_all(&bytes)?;
         self.pos.file_offset += bytes.len() as u64;
@@ -368,6 +401,42 @@ pub fn read_all(path: &Path) -> io::Result<Vec<u8>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ebcdic_translation_round_trip() {
+        let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let src = dir.path().join("in.dat");
+        // Local ASCII payload: 'A', 'B', space, '0'.
+        std::fs::write(&src, b"AB 0").unwrap_or_else(|e| panic!("{e}"));
+
+        // Sending translates each article ASCII/Latin-1 -> EBCDIC CP037 for the wire.
+        let mut s = FileSource::open(&src, RecordFormat::Bu, 4)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .with_ebcdic(true);
+        let wire = s
+            .next_article()
+            .unwrap_or_default()
+            .unwrap_or_else(|| panic!("no article"));
+        assert_eq!(wire, vec![0xC1, 0xC2, 0x40, 0xF0], "A B space 0 in EBCDIC");
+        assert!(s.next_article().unwrap_or_default().is_none());
+
+        // Receiving translates the EBCDIC article back to the local Latin-1 representation.
+        let dst = dir.path().join("out.dat");
+        let mut k = FileSink::create(&dst, RecordFormat::Bu, None)
+            .unwrap_or_else(|e| panic!("{e}"))
+            .with_ebcdic(true);
+        k.write_article(&wire).unwrap_or_default();
+        k.finish().unwrap_or_default();
+        assert_eq!(std::fs::read(&dst).unwrap_or_default(), b"AB 0");
+
+        // Without the EBCDIC flag the wire bytes are the raw local bytes (no translation).
+        let mut plain =
+            FileSource::open(&src, RecordFormat::Bu, 4).unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(
+            plain.next_article().unwrap_or_default(),
+            Some(b"AB 0".to_vec())
+        );
+    }
 
     #[test]
     fn file_source_and_sink_round_trip() {

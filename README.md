@@ -53,7 +53,8 @@ auth), `PESIT_DB`, `PESIT_CHECKPOINT_DIR`, `PESIT_CLIENT_CHECKPOINT_DIR`, `PESIT
 Listeners are created through the admin API and may be flagged `autoStart`. Options beyond the Java
 ones: `syncWindow` (ACK(SYN) window, 0 = no acknowledgement), `sslEnabled`, `tcpipHeader` (transport
 header on TLS connections, Connect:Express `TCPIP_HEADER`), `compression` (0–3). Virtual files accept
-`text: true` for line records (LF stripped / appended) instead of binary chunks; partners accept
+`text: true` for line records (LF stripped / appended) instead of binary chunks and `ebcdic: true`
+(PI 16 = 1) to translate article bytes Latin-1 ↔ EBCDIC CP037 on the wire; partners accept
 `preconnectPassword` for Connect:Express partners of type T/O.
 
 ### One-shot CLI
