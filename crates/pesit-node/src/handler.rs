@@ -225,6 +225,8 @@ impl PwHandler {
             started_at: Some(now_iso()),
             updated_at: Some(now_iso()),
             remote_address: Some(session.remote_addr.clone()),
+            label: file.label.clone().filter(|s| !s.is_empty()),
+            free_message: file.free_message.clone().filter(|s| !s.is_empty()),
             ..TransferRecord::default()
         }
     }

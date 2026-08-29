@@ -431,6 +431,10 @@ impl Engine {
             max_reservation: size.map_or(0, |s| s.div_ceil(1024)),
             creation_date: Some(pesit_now()),
             data_code: req.ebcdic.unwrap_or(false).then_some(1),
+            label: req.label.clone().filter(|s| !s.is_empty()),
+            client_id: req.client_id.clone().filter(|s| !s.is_empty()),
+            bank_id: req.bank_id.clone().filter(|s| !s.is_empty()),
+            free_message: req.free_message.clone().filter(|s| !s.is_empty()),
             ..FileSpec::default()
         }
     }

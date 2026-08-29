@@ -476,6 +476,10 @@ pub struct TransferRecord {
     pub parent_transfer_id: Option<String>,
     /// Free metadata.
     pub metadata: Option<String>,
+    /// File label announced by the peer (PI 37).
+    pub label: Option<String>,
+    /// Free message carried with the request (PI 99).
+    pub free_message: Option<String>,
 }
 
 impl Default for TransferRecord {
@@ -507,6 +511,8 @@ impl Default for TransferRecord {
             checksum_algorithm: "SHA-256".into(),
             parent_transfer_id: None,
             metadata: None,
+            label: None,
+            free_message: None,
         }
     }
 }

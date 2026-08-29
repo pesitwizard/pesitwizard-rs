@@ -152,6 +152,14 @@ pub struct TransferRequest {
     pub crc_enabled: Option<bool>,
     /// Maximum entity size (PI 25).
     pub max_entity_size: Option<u16>,
+    /// File label (PI 37).
+    pub label: Option<String>,
+    /// SIT client identifier (PI 61).
+    pub client_id: Option<String>,
+    /// SIT bank identifier (PI 62).
+    pub bank_id: Option<String>,
+    /// Free message carried with the request (PI 99).
+    pub free_message: Option<String>,
 }
 
 impl TransferRequest {
