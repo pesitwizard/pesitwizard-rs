@@ -91,7 +91,8 @@ A virtual file can be backed by an external storage system instead of the local 
   (connectors are not replicated across the cluster). ✔
 - Validated end to end against **MinIO** (`integration/s3/`): a received file lands in the bucket and
   is read back from it with a matching checksum. ✔
-- Later: streaming without a staging file, and per-connector retry / bandwidth policy.
+- Transient fetch / store failures are retried with exponential backoff (3 attempts). ✔
+- Later: streaming without a staging file, and configurable per-connector retry / bandwidth policy.
 
 ## Related
 

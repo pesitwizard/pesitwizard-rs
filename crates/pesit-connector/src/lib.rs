@@ -39,29 +39,67 @@ pub enum Connector {
     Sftp(SftpConnector),
 }
 
+/// Total attempts (initial try plus retries) for a transient connector operation.
+const MAX_ATTEMPTS: u32 = 3;
+/// Backoff before the first retry; doubled after each failed attempt.
+const RETRY_BASE_DELAY: std::time::Duration = std::time::Duration::from_millis(200);
+
 impl Connector {
-    /// Download `remote` into the local `dest` file; returns bytes copied.
+    /// Download `remote` into the local `dest` file; returns bytes copied. Retries transient
+    /// failures with exponential backoff.
     pub async fn fetch(&self, remote: &str, dest: &Path) -> Result<u64, ConnectorError> {
-        match self {
-            Connector::Local(c) => c
-                .fetch(remote, dest)
-                .await
-                .map_err(|e| ConnectorError::Local(e.to_string())),
-            Connector::S3(c) => Ok(c.fetch(remote, dest).await?),
-            Connector::Sftp(c) => Ok(c.fetch(remote, dest).await?),
+        let mut delay = RETRY_BASE_DELAY;
+        for attempt in 1..=MAX_ATTEMPTS {
+            let r = match self {
+                Connector::Local(c) => c
+                    .fetch(remote, dest)
+                    .await
+                    .map_err(|e| ConnectorError::Local(e.to_string())),
+                Connector::S3(c) => c.fetch(remote, dest).await.map_err(ConnectorError::from),
+                Connector::Sftp(c) => c.fetch(remote, dest).await.map_err(ConnectorError::from),
+            };
+            match r {
+                Ok(v) => return Ok(v),
+                Err(e) if attempt < MAX_ATTEMPTS => {
+                    tracing::warn!(
+                        "connector {} fetch '{remote}' attempt {attempt}/{MAX_ATTEMPTS} failed: {e}; retrying in {delay:?}",
+                        self.kind()
+                    );
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                }
+                Err(e) => return Err(e),
+            }
         }
+        unreachable!("loop returns on the last attempt")
     }
 
-    /// Upload the local `src` file to `remote`.
+    /// Upload the local `src` file to `remote`. Retries transient failures with exponential backoff.
     pub async fn store(&self, src: &Path, remote: &str) -> Result<(), ConnectorError> {
-        match self {
-            Connector::Local(c) => c
-                .store(src, remote)
-                .await
-                .map_err(|e| ConnectorError::Local(e.to_string())),
-            Connector::S3(c) => Ok(c.store(src, remote).await?),
-            Connector::Sftp(c) => Ok(c.store(src, remote).await?),
+        let mut delay = RETRY_BASE_DELAY;
+        for attempt in 1..=MAX_ATTEMPTS {
+            let r = match self {
+                Connector::Local(c) => c
+                    .store(src, remote)
+                    .await
+                    .map_err(|e| ConnectorError::Local(e.to_string())),
+                Connector::S3(c) => c.store(src, remote).await.map_err(ConnectorError::from),
+                Connector::Sftp(c) => c.store(src, remote).await.map_err(ConnectorError::from),
+            };
+            match r {
+                Ok(()) => return Ok(()),
+                Err(e) if attempt < MAX_ATTEMPTS => {
+                    tracing::warn!(
+                        "connector {} store '{remote}' attempt {attempt}/{MAX_ATTEMPTS} failed: {e}; retrying in {delay:?}",
+                        self.kind()
+                    );
+                    tokio::time::sleep(delay).await;
+                    delay *= 2;
+                }
+                Err(e) => return Err(e),
+            }
         }
+        unreachable!("loop returns on the last attempt")
     }
 
     /// Check connectivity to the backend.
@@ -84,5 +122,46 @@ impl Connector {
             Connector::S3(_) => "s3",
             Connector::Sftp(_) => "sftp",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::local::LocalConnector;
+    use std::time::{Duration, Instant};
+
+    #[tokio::test]
+    async fn fetch_retries_with_backoff_then_fails() {
+        let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let c = Connector::Local(LocalConnector::new(dir.path()));
+        let dest = dir.path().join("out.dat");
+        let start = Instant::now();
+        let r = c.fetch("does-not-exist.dat", &dest).await;
+        assert!(r.is_err(), "fetching a missing object must fail");
+        // Two retries between three attempts => at least 200ms + 400ms of backoff.
+        assert!(
+            start.elapsed() >= Duration::from_millis(600),
+            "expected exponential backoff between attempts, elapsed {:?}",
+            start.elapsed()
+        );
+    }
+
+    #[tokio::test]
+    async fn store_then_fetch_round_trip_succeeds() {
+        let dir = tempfile::tempdir().unwrap_or_else(|e| panic!("{e}"));
+        let c = Connector::Local(LocalConnector::new(dir.path()));
+        let src = dir.path().join("src.dat");
+        std::fs::write(&src, b"hello").unwrap_or_else(|e| panic!("{e}"));
+        c.store(&src, "stored.dat")
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+        let dest = dir.path().join("back.dat");
+        let n = c
+            .fetch("stored.dat", &dest)
+            .await
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert_eq!(n, 5);
+        assert_eq!(std::fs::read(&dest).unwrap_or_default(), b"hello");
     }
 }
