@@ -374,13 +374,36 @@ async fn serve(
         "admin API + web UI on http://{admin_addr} · transfer API on http://{transfer_addr}"
     );
 
-    let result = tokio::select! {
-        r = axum::serve(admin, admin_router) => r.map_err(anyhow::Error::from),
-        r = axum::serve(transfer, transfer_router) => r.map_err(anyhow::Error::from),
-        () = shutdown_signal() => Ok(()),
+    // Graceful shutdown: on SIGTERM / Ctrl-C, both HTTP servers stop accepting and let in-flight
+    // requests finish before the process exits. `watch::wait_for` avoids the race where the signal
+    // fires before a server starts waiting.
+    let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(false);
+    tokio::spawn(async move {
+        shutdown_signal().await;
+        let _ = shutdown_tx.send(true);
+    });
+    let wait_for_shutdown = move || {
+        let mut rx = shutdown_rx.clone();
+        async move {
+            let _ = rx.wait_for(|stop| *stop).await;
+        }
     };
+    let result = tokio::try_join!(
+        async {
+            axum::serve(admin, admin_router)
+                .with_graceful_shutdown(wait_for_shutdown())
+                .await
+                .map_err(anyhow::Error::from)
+        },
+        async {
+            axum::serve(transfer, transfer_router)
+                .with_graceful_shutdown(wait_for_shutdown())
+                .await
+                .map_err(anyhow::Error::from)
+        },
+    );
     manager.stop_all();
-    result
+    result.map(|_| ())
 }
 
 async fn shutdown_signal() {
