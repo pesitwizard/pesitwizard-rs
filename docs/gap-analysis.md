@@ -54,7 +54,7 @@ can break exchanges with C:X in some configuration; **[spec]** = missing protoco
 17. **Interrupted-transfer bookkeeping**: Java cancellation just throws and closes the socket
     (C:X logs a network incident). Rust: clean F.CANCEL (IDT 19=16/12) then CRF/DESELECT/RELEASE.
 
-## Status in the Rust implementation (2026-08-28)
+## Status in the Rust implementation (2026-08-29)
 
 | # | Gap | Rust status |
 |---|-----|-------------|

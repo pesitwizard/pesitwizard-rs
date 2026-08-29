@@ -3,9 +3,12 @@
 ## Crates
 
 ```
-pesit-core   protocol model (no I/O)          pesit-io     tokio session engines
-pesit-app    SQLite JSON store + REST utils    pesit-client outbound engine (library)
-pesit-node   the `pesitwizard` binary: listeners + outbound engine + REST APIs + web UI
+pesit-core      protocol model (no I/O)         pesit-io        tokio session engines
+pesit-app       SQLite JSON store + REST utils  pesit-client    outbound engine (library)
+pesit-pki       X.509 / local CA / Vault PKI,   pesit-cluster   NATS/JetStream membership,
+                OCSP, backup signing                            leader election, replication
+pesit-connector S3 / SFTP / local staging       pesit-node      the `pesitwizard` binary
+pesit-node      listeners + outbound engine + REST APIs + web UI, wiring the crates above
 ```
 
 The node is a single process. It runs the listener manager and the outbound transfer engine over
