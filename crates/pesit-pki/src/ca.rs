@@ -1,8 +1,9 @@
 //! A local certificate authority based on `rcgen`.
 
 use rcgen::{
-    BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
-    KeyPair, KeyUsagePurpose,
+    BasicConstraints, CertificateParams, CertificateRevocationListParams, DistinguishedName,
+    DnType, ExtendedKeyUsagePurpose, IsCa, KeyIdMethod, KeyPair, KeyUsagePurpose, RevocationReason,
+    RevokedCertParams, SerialNumber,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -125,6 +126,39 @@ impl LocalCa {
             serial: None,
         })
     }
+
+    /// Produce a CRL (PEM) signed by this CA revoking the given certificate serials.
+    /// Each entry is `(serial_bytes, revocation_time_unix_secs)`.
+    pub fn sign_crl(
+        &self,
+        revoked: &[(Vec<u8>, i64)],
+        crl_number: u64,
+        valid_days: u32,
+    ) -> Result<String, PkiError> {
+        let ca_key = KeyPair::from_pem(&self.key_pem).map_err(err)?;
+        let ca_params = CertificateParams::from_ca_cert_pem(&self.cert_pem).map_err(err)?;
+        let ca_cert = ca_params.self_signed(&ca_key).map_err(err)?;
+        let now = OffsetDateTime::now_utc();
+        let revoked_certs = revoked
+            .iter()
+            .map(|(serial, at)| RevokedCertParams {
+                serial_number: SerialNumber::from_slice(serial),
+                revocation_time: OffsetDateTime::from_unix_timestamp(*at).unwrap_or(now),
+                reason_code: Some(RevocationReason::Unspecified),
+                invalidity_date: None,
+            })
+            .collect();
+        let params = CertificateRevocationListParams {
+            this_update: now,
+            next_update: now + Duration::days(i64::from(valid_days.max(1))),
+            crl_number: SerialNumber::from(crl_number),
+            issuing_distribution_point: None,
+            revoked_certs,
+            key_identifier_method: KeyIdMethod::Sha256,
+        };
+        let crl = params.signed_by(&ca_cert, &ca_key).map_err(err)?;
+        crl.pem().map_err(err)
+    }
 }
 
 #[cfg(test)]
@@ -232,5 +266,27 @@ mod tests {
             leaf.verify_signature(Some(b_cert.public_key())).is_err(),
             "a leaf must not verify against an unrelated CA"
         );
+    }
+    #[test]
+    fn signs_a_crl_listing_the_revoked_serial() {
+        let ca = ca();
+        let serial = vec![0x12u8, 0x34, 0x56, 0x78];
+        let crl_pem = ca
+            .sign_crl(&[(serial.clone(), 1_700_000_000)], 1, 7)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(crl_pem.contains("BEGIN X509 CRL"), "not a CRL: {crl_pem}");
+        let block = x509_parser::pem::Pem::iter_from_buffer(crl_pem.as_bytes())
+            .next()
+            .unwrap_or_else(|| panic!("no PEM block"))
+            .unwrap_or_else(|e| panic!("{e}"));
+        let (_, crl) = x509_parser::prelude::CertificateRevocationList::from_der(&block.contents)
+            .unwrap_or_else(|e| panic!("{e}"));
+        assert!(
+            crl.issuer().to_string().contains("PeSIT Wizard Test CA"),
+            "issuer: {}",
+            crl.issuer()
+        );
+        let count = crl.iter_revoked_certificates().count();
+        assert_eq!(count, 1, "the CRL must list one revoked certificate");
     }
 }

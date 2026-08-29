@@ -313,6 +313,16 @@ async fn serve(
         cluster.clone(),
         Arc::clone(&audit),
     );
+    if opts.cert_rotation_days > 0 {
+        if let Some(pki) = pki.clone() {
+            rotation_task(
+                pki,
+                cluster.clone(),
+                Arc::clone(&audit),
+                opts.cert_rotation_days,
+            );
+        }
+    }
 
     let api_key = if opts.security_enabled {
         opts.api_key
@@ -413,6 +423,30 @@ async fn wait_and_report(engine: &Engine, id: &str) -> anyhow::Result<()> {
             return Ok(());
         }
     }
+}
+
+/// Periodically rotate managed keystores nearing expiry (only on the cluster leader).
+fn rotation_task(
+    pki: Arc<pki::PkiState>,
+    cluster: Option<Arc<pesit_cluster::Cluster>>,
+    audit: Arc<AuditLog>,
+    days: i64,
+) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(std::time::Duration::from_secs(3600));
+        loop {
+            tick.tick().await;
+            if cluster.as_ref().is_some_and(|c| !c.is_leader()) {
+                continue;
+            }
+            for name in pki.expiring_keystores(days) {
+                match pki.rotate(&name).await {
+                    Ok(()) => audit.success("certificate", "rotate", &name),
+                    Err(e) => audit.failure("certificate", "rotate", &name, e.to_string()),
+                }
+            }
+        }
+    });
 }
 
 fn bootstrap(store: &JsonStore, boot: Bootstrap) -> anyhow::Result<()> {

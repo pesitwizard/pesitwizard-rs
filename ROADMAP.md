@@ -36,7 +36,12 @@ Replaces the enterprise `pki` + admin CA/certificate features. See
 - **Native Vault PKI backend**: issue and sign through Vault's PKI secrets engine (token / AppRole),
   configurable per node via `reqwest`. ✔
 - Managed keystores / truststores wired into the listener TLS layer; REST + web UI tab. ✔
-- Later: certificate rotation, an OCSP responder.
+- Certificate rotation: `POST /api/v1/certificates/keystores/{name}/rotate` re-issues a managed
+  keystore in place (same identity, recorded backend), and a leader-driven task auto-rotates
+  keystores within `PESIT_CERT_ROTATION_DAYS` of expiry. ✔
+- Revocation: `POST /api/v1/certificates/revoked` revokes a serial and `GET /api/v1/certificates/crl`
+  returns a CRL signed by the local CA. ✔
+- Later: an online OCSP responder.
 
 ### 2. Audit log — *done*
 

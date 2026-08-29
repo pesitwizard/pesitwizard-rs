@@ -98,6 +98,14 @@ pub struct NodeOptions {
     /// YAML bootstrap file (partners / files / remotePartners / servers).
     #[arg(long, env = "PESIT_CONFIG", global = true)]
     pub config: Option<PathBuf>,
+    /// Auto-rotate managed keystores this many days before expiry (0 = disabled).
+    #[arg(
+        long,
+        env = "PESIT_CERT_ROTATION_DAYS",
+        default_value_t = 0,
+        global = true
+    )]
+    pub cert_rotation_days: i64,
     /// Node identifier reported in transfer records and cluster membership.
     #[arg(long, env = "PESIT_NODE_ID", default_value = "node-1", global = true)]
     pub node_id: String,

@@ -183,7 +183,7 @@ async function draw(){try{await TABS[state.tab].render()}catch(e){$('#view').inn
 const errBox=e=>`<div class="panel"><div class="empty"><div class="big">⚠</div>${esc(e.message||e)}</div></div>`;
 const emptyRow=(n,msg)=>`<tr><td colspan="${n}"><div class="empty"><div class="big">∅</div>${esc(msg)}</div></td></tr>`;
 async function renderCerts(){
-  const [ks,ts,vault]=await Promise.all([api('/certificates/keystores'),api('/certificates/truststores'),api('/certificates/vault')]);
+  const [ks,ts,vault,revoked]=await Promise.all([api('/certificates/keystores'),api('/certificates/truststores'),api('/certificates/vault'),api('/certificates/revoked').catch(()=>[])]);
   let ca=null; try{ca=await api('/certificates/ca')}catch{}
   const certRow=c=>`<tr><td class="mono">${esc(c.subject)}</td><td>${c.valid?'<span class="pill ok">valid</span>':'<span class="pill err">expired</span>'}${c.isCa?' <span class="pill info">CA</span>':''}</td><td class="muted nowrap">${esc(c.notAfter)}</td></tr>`;
   $('#view').innerHTML=`
@@ -211,7 +211,7 @@ async function renderCerts(){
    </div>
    <div class="panel"><div class="panel-h"><h2>Keystores</h2><span class="sub">${ks.length} · certificate + private key</span></div>
      <table><thead><tr><th>Name</th><th>Subject</th><th>State</th><th>Expires</th><th></th></tr></thead><tbody>
-     ${ks.length?ks.map(k=>`<tr><td class="mono">${esc(k.name)}</td><td class="mono">${esc(k.info.subject)}</td><td>${k.info.valid?'<span class="pill ok">valid</span>':'<span class="pill err">expired</span>'}</td><td class="muted nowrap">${esc(k.info.notAfter)}</td><td><button class="btn sm danger" onclick="delCert('keystores','${esc(k.name)}')">✕</button></td></tr>`).join(''):emptyRow(5,'No keystore yet')}
+     ${ks.length?ks.map(k=>`<tr><td class="mono">${esc(k.name)}</td><td class="mono">${esc(k.info.subject)}</td><td>${k.info.valid?'<span class="pill ok">valid</span>':'<span class="pill err">expired</span>'}</td><td class="muted nowrap">${esc(k.info.notAfter)}</td><td class="nowrap row"><button class="btn sm" onclick="rotateKs('${esc(k.name)}')">Rotate</button><button class="btn sm danger" onclick="delCert('keystores','${esc(k.name)}')">✕</button></td></tr>`).join(''):emptyRow(5,'No keystore yet')}
      </tbody></table>
      <form class="grid" onsubmit="importKs(this);return false">
        <label class="f">Name<input name="name" required placeholder="node-tls"></label>
@@ -228,6 +228,15 @@ async function renderCerts(){
        <label class="f">Name<input name="name" required placeholder="roots"></label>
        <label class="f full">CA certificates (PEM)<textarea name="certificates" required placeholder="-----BEGIN CERTIFICATE-----"></textarea></label>
        <div class="form-foot"><button class="btn" type="submit">Import truststore</button></div>
+     </form>
+   </div>
+   <div class="panel"><div class="panel-h"><h2>Revocation</h2><span class="sub">${revoked.length} revoked · CRL signed by the local CA</span></div>
+     <table><thead><tr><th>Serial</th><th>Revoked at</th></tr></thead><tbody>
+     ${revoked.length?revoked.map(r=>`<tr><td class="mono">${esc(r.serial)}</td><td class="muted nowrap">${esc((r.revokedAt||'').replace('T',' ').slice(0,19))}</td></tr>`).join(''):emptyRow(2,'No revoked certificates')}
+     </tbody></table>
+     <form class="grid" onsubmit="revokeSerial(this);return false">
+       <label class="f">Certificate serial (hex)<input name="serial" required placeholder="1a:2b:3c…"></label>
+       <div class="form-foot"><button class="btn" type="button" onclick="downloadCrl()">⭳ Download CRL</button><button class="btn danger" type="submit">Revoke</button></div>
      </form>
    </div>
    <div class="panel"><div class="panel-h"><h2>Vault PKI</h2>${vault.configured?`<span class="pill ok">configured</span>`:`<span class="pill mut">not configured</span>`}</div>
@@ -250,6 +259,9 @@ function regenCa(){if(confirm('Regenerate the CA? Existing issued certificates w
 async function genCa2(){const cn=prompt('CA common name','PeSIT Wizard CA');if(!cn)return;try{await api('/certificates/ca',{method:'POST',body:JSON.stringify({commonName:cn,ttlDays:3650})});toast('CA regenerated','','ok');renderCerts()}catch(e){toast('Failed',e.message,'err')}}
 async function issueCert(f){const d=formObj(f);const sans=(d._sans||'').split(',').map(x=>x.trim()).filter(Boolean);delete d._sans;d.sans=sans;d.ttlDays=+d.ttlDays;
   try{const r=await api('/certificates/issue',{method:'POST',body:JSON.stringify(d)});const pre=$('#issuedPem');pre.classList.remove('hide');pre.textContent=r.certificate+(r.privateKey?('\n'+r.privateKey):'');toast('Certificate issued','via '+r.backend+(r.storedAs?(' · stored as '+r.storedAs):''),'ok');if(r.storedAs)renderCerts()}catch(e){toast('Issue failed',e.message,'err')}}
+async function rotateKs(name){toast('Rotating…','');try{const r=await api('/certificates/keystores/'+encodeURIComponent(name)+'/rotate',{method:'POST'});toast('Keystore rotated',name,'ok');renderCerts()}catch(e){toast('Rotate failed',e.message,'err')}}
+async function revokeSerial(f){const d=formObj(f);try{await api('/certificates/revoked',{method:'POST',body:JSON.stringify({serial:d.serial})});toast('Certificate revoked',d.serial,'ok');renderCerts()}catch(e){toast('Revoke failed',e.message,'err')}}
+async function downloadCrl(){try{const r=await api('/certificates/crl');const blob=new Blob([r.crl],{type:'application/x-pem-file'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='pesitwizard.crl.pem';document.body.append(a);a.click();a.remove();URL.revokeObjectURL(a.href);toast('CRL downloaded','','ok')}catch(e){toast('CRL failed',e.message,'err')}}
 async function importKs(f){const d=formObj(f);try{await api('/certificates/keystores',{method:'POST',body:JSON.stringify(d)});toast('Keystore imported',d.name,'ok');renderCerts()}catch(e){toast('Import failed',e.message,'err')}}
 async function importTs(f){const d=formObj(f);try{await api('/certificates/truststores',{method:'POST',body:JSON.stringify(d)});toast('Truststore imported',d.name,'ok');renderCerts()}catch(e){toast('Import failed',e.message,'err')}}
 async function delCert(kind,name){if(!confirm('Delete '+name+'?'))return;try{await api('/certificates/'+kind+'/'+encodeURIComponent(name),{method:'DELETE'});toast('Deleted',name,'ok');renderCerts()}catch(e){toast('Delete failed',e.message,'err')}}

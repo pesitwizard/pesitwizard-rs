@@ -15,7 +15,6 @@ serde_json.workspace = true
 chrono.workspace = true
 rcgen.workspace = true
 x509-parser.workspace = true
-pem.workspace = true
 time.workspace = true
 reqwest.workspace = true
 sha2.workspace = true

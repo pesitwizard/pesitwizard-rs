@@ -68,6 +68,18 @@ A listener may reference managed material instead of file paths:
 certificates. Remote servers accept an uploaded CA truststore through
 `POST /api/v1/servers/{id}/tls/truststore`.
 
+## Rotation and revocation
+
+`POST /api/v1/certificates/keystores/{name}/rotate` re-issues a managed keystore in place, keeping its
+common name and SANs and using the backend it was issued with (local CA or Vault). Set
+`PESIT_CERT_ROTATION_DAYS` to have a background task (leader-driven in a cluster) auto-rotate keystores
+that expire within that many days.
+
+`POST /api/v1/certificates/revoked` (`{"serial":"1a:2b:…"}`) revokes a certificate serial;
+`GET /api/v1/certificates/revoked` lists them and `GET /api/v1/certificates/crl` returns a CRL (PEM)
+signed by the local CA. The Certificates tab exposes a Rotate button per keystore and a revocation
+panel with a CRL download.
+
 ## Integration test
 
 `make vault-test` runs an end-to-end test against a dev-mode Vault in Docker: it enables Vault's PKI

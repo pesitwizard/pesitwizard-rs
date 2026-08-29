@@ -127,6 +127,149 @@ impl PkiState {
         json!({ "ca": ca, "keystores": keystores, "truststores": truststores })
     }
 
+    /// The list of revoked (serial, time) entries.
+    #[must_use]
+    pub fn revoked_list(&self) -> Vec<RevokedEntry> {
+        self.doc
+            .get::<Vec<RevokedEntry>>(PKI_TABLE, "revoked")
+            .ok()
+            .flatten()
+            .unwrap_or_default()
+    }
+
+    /// Record a certificate serial (hex, colons/spaces ignored) as revoked.
+    pub fn revoke(&self, serial: &str) -> Result<(), pesit_pki::PkiError> {
+        let norm = normalize_serial(serial);
+        if norm.is_empty() {
+            return Err(pesit_pki::PkiError::Gen("invalid serial".into()));
+        }
+        let mut list = self.revoked_list();
+        if !list.iter().any(|e| e.serial == norm) {
+            list.push(RevokedEntry {
+                serial: norm,
+                revoked_at: pesit_app::time::now_iso(),
+            });
+            self.doc
+                .put(PKI_TABLE, "revoked", &list)
+                .map_err(|e| pesit_pki::PkiError::Gen(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    /// Build a CRL (PEM) signed by the local CA covering the revoked serials.
+    pub fn build_crl(&self) -> Result<String, pesit_pki::PkiError> {
+        let ca = self
+            .ca
+            .lock()
+            .map_err(|_| pesit_pki::PkiError::Gen("CA lock poisoned".into()))?
+            .clone()
+            .ok_or(pesit_pki::PkiError::NoCa)?;
+        let revoked: Vec<(Vec<u8>, i64)> = self
+            .revoked_list()
+            .into_iter()
+            .filter_map(|e| {
+                let bytes = hex_to_bytes(&e.serial)?;
+                let at = pesit_app::time::parse_millis(&e.revoked_at).map_or(0, |ms| ms / 1000);
+                Some((bytes, at))
+            })
+            .collect();
+        let number = self.doc.next_counter("crl_number").unwrap_or(1);
+        ca.sign_crl(&revoked, number, 7)
+    }
+
+    /// Names of keystores whose certificate expires within `days`.
+    #[must_use]
+    pub fn expiring_keystores(&self, days: i64) -> Vec<String> {
+        let horizon = pesit_app::time::now_millis() + days * 86_400_000;
+        self.store
+            .list_keystores()
+            .into_iter()
+            .filter(|m| rfc2822_millis(&m.info.not_after).is_some_and(|ms| ms <= horizon))
+            .map(|m| m.name)
+            .collect()
+    }
+
+    /// Re-issue a keystore in place, keeping its identity (CN / SANs) and recorded backend.
+    pub async fn rotate(&self, name: &str) -> Result<(), pesit_pki::PkiError> {
+        let current = self
+            .store
+            .keystore(name)
+            .ok_or_else(|| pesit_pki::PkiError::Gen(format!("keystore '{name}' not found")))?;
+        let meta = self
+            .doc
+            .get::<serde_json::Value>(PKI_TABLE, &format!("ks:{name}"))
+            .ok()
+            .flatten();
+        let backend = meta
+            .as_ref()
+            .and_then(|m| m.get("backend"))
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or("local")
+            .to_owned();
+        let common_name = meta
+            .as_ref()
+            .and_then(|m| m.get("commonName"))
+            .and_then(serde_json::Value::as_str)
+            .map_or_else(|| cn_of(&current.info.subject), str::to_owned);
+        let sans: Vec<String> = meta
+            .as_ref()
+            .and_then(|m| m.get("sans"))
+            .and_then(serde_json::Value::as_array)
+            .map_or_else(
+                || current.info.sans.clone(),
+                |a| {
+                    a.iter()
+                        .filter_map(|v| v.as_str().map(str::to_owned))
+                        .collect()
+                },
+            );
+        let ttl = meta
+            .as_ref()
+            .and_then(|m| m.get("ttlDays"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or(365) as u32;
+        let req = CertRequest {
+            common_name,
+            sans,
+            ttl_days: ttl,
+            is_ca: false,
+            server_auth: true,
+            client_auth: true,
+            organization: None,
+        };
+        let issued = self.issue_via(&backend, &req).await?;
+        let key = issued
+            .private_key
+            .ok_or_else(|| pesit_pki::PkiError::Gen("no private key returned".into()))?;
+        self.store
+            .put_keystore(name, &issued.certificate, &key)
+            .map_err(|e| pesit_pki::PkiError::Gen(e.to_string()))?;
+        tracing::info!("rotated keystore '{name}' (backend {backend})");
+        Ok(())
+    }
+
+    async fn issue_via(
+        &self,
+        backend: &str,
+        req: &CertRequest,
+    ) -> Result<pesit_pki::Issued, pesit_pki::PkiError> {
+        if backend.eq_ignore_ascii_case("vault") {
+            let v =
+                self.vault.lock().await.clone().ok_or_else(|| {
+                    pesit_pki::PkiError::Vault("no Vault backend configured".into())
+                })?;
+            v.issue(req).await
+        } else {
+            let ca = self
+                .ca
+                .lock()
+                .map_err(|_| pesit_pki::PkiError::Gen("CA lock poisoned".into()))?
+                .clone()
+                .ok_or(pesit_pki::PkiError::NoCa)?;
+            ca.issue(req)
+        }
+    }
+
     /// Import CA / keystores / truststores from a backup value.
     pub fn import_material(&self, value: &serde_json::Value) -> Result<(), pesit_pki::PkiError> {
         if let Some(ca) = value.get("ca").filter(|c| c.is_object()) {
@@ -212,6 +355,12 @@ pub fn routes() -> Router<Arc<App>> {
             get(vault_status).put(set_vault).delete(clear_vault),
         )
         .route("/api/v1/certificates/vault/test", post(test_vault))
+        .route("/api/v1/certificates/revoked", get(revoked).post(revoke))
+        .route("/api/v1/certificates/crl", get(crl))
+        .route(
+            "/api/v1/certificates/keystores/{name}/rotate",
+            post(rotate_keystore),
+        )
 }
 
 fn pki(app: &App) -> Result<&PkiState, ApiError> {
@@ -424,6 +573,11 @@ async fn issue(
             .store
             .put_keystore(name, &issued.certificate, key)
             .map_err(map_store)?;
+        let meta = serde_json::json!({
+            "backend": kind, "commonName": b.request.common_name, "sans": b.request.sans,
+            "ttlDays": b.request.ttl_days, "serverAuth": b.request.server_auth, "clientAuth": b.request.client_auth,
+        });
+        let _ = state.doc.put(PKI_TABLE, &format!("ks:{name}"), &meta);
         Some(name.clone())
     } else {
         None
@@ -489,6 +643,77 @@ async fn test_vault(State(app): State<Arc<App>>) -> Result<Json<serde_json::Valu
         Ok(version) => Ok(Json(json!({ "success": true, "vaultVersion": version }))),
         Err(e) => Ok(Json(json!({ "success": false, "message": e.to_string() }))),
     }
+}
+
+/// A revoked-certificate record.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RevokedEntry {
+    /// Serial number (hex).
+    pub serial: String,
+    /// Revocation time (RFC 3339).
+    pub revoked_at: String,
+}
+
+fn normalize_serial(s: &str) -> String {
+    s.chars()
+        .filter(char::is_ascii_hexdigit)
+        .flat_map(char::to_lowercase)
+        .collect()
+}
+fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
+    let h = normalize_serial(hex);
+    if h.is_empty() || h.len() % 2 != 0 {
+        return None;
+    }
+    (0..h.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&h[i..i + 2], 16).ok())
+        .collect()
+}
+fn cn_of(subject: &str) -> String {
+    subject
+        .split(',')
+        .map(str::trim)
+        .find_map(|p| p.strip_prefix("CN="))
+        .unwrap_or(subject)
+        .to_owned()
+}
+fn rfc2822_millis(s: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc2822(s)
+        .ok()
+        .map(|d| d.timestamp_millis())
+}
+
+#[derive(Deserialize)]
+struct RevokeBody {
+    serial: String,
+}
+async fn revoke(
+    State(app): State<Arc<App>>,
+    Json(b): Json<RevokeBody>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let state = pki(&app)?;
+    state.revoke(&b.serial).map_err(map_pki)?;
+    app.audit.success("certificate", "revoke", &b.serial);
+    Ok(Json(json!({ "revoked": normalize_serial(&b.serial) })))
+}
+async fn revoked(State(app): State<Arc<App>>) -> Result<Json<Vec<RevokedEntry>>, ApiError> {
+    Ok(Json(pki(&app)?.revoked_list()))
+}
+async fn crl(State(app): State<Arc<App>>) -> Result<Json<serde_json::Value>, ApiError> {
+    let pem = pki(&app)?.build_crl().map_err(map_pki)?;
+    Ok(Json(json!({ "crl": pem })))
+}
+async fn rotate_keystore(
+    State(app): State<Arc<App>>,
+    Path(name): Path<String>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let state = pki(&app)?;
+    state.rotate(&name).await.map_err(map_pki)?;
+    app.audit.success("certificate", "rotate", &name);
+    let info = state.store.keystore(&name).map(|m| m.info);
+    Ok(Json(json!({ "rotated": name, "info": info })))
 }
 
 #[cfg(unix)]
